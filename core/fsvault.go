@@ -19,9 +19,10 @@ import (
 // FSVault is a filesystem-backed Vault implementation.
 // The vault root is a directory; each .md file is a note.
 type FSVault struct {
-	root    string
-	mu      sync.Map   // per-path *sync.Mutex for concurrent writes
-	ignored *ignoreSet // paths recently written by FSVault itself
+	root     string
+	indexDir string     // if empty, defaults to ~/.jade/indexes/<hash>/
+	mu       sync.Map   // per-path *sync.Mutex for concurrent writes
+	ignored  *ignoreSet // paths recently written by FSVault itself
 
 	// Backlink index — protected by blMu.
 	// blOutgoing: sourceID → set of resolved target IDs
@@ -31,19 +32,36 @@ type FSVault struct {
 	blOutgoing map[string]map[string]struct{}
 	blIncoming map[string]map[string]struct{}
 	blAllIDs   []string
+
+	// Full-text search index.
+	search *searchIndex
+}
+
+// FSVaultOption is a functional option for NewFSVault.
+type FSVaultOption func(*FSVault)
+
+// WithIndexDir overrides the directory used for the Bleve search index.
+// Useful in tests to avoid polluting ~/.jade/indexes/.
+func WithIndexDir(dir string) FSVaultOption {
+	return func(v *FSVault) { v.indexDir = dir }
 }
 
 // NewFSVault creates an FSVault rooted at the given directory path.
-func NewFSVault(root string) *FSVault {
-	return &FSVault{
+func NewFSVault(root string, opts ...FSVaultOption) *FSVault {
+	v := &FSVault{
 		root:       filepath.Clean(root),
 		ignored:    newIgnoreSet(),
 		blOutgoing: make(map[string]map[string]struct{}),
 		blIncoming: make(map[string]map[string]struct{}),
 	}
+	for _, o := range opts {
+		o(v)
+	}
+	return v
 }
 
-// Open verifies the vault root exists and builds the backlink index.
+// Open verifies the vault root exists, builds the backlink index, and opens the
+// full-text search index.
 func (v *FSVault) Open(ctx context.Context) error {
 	info, err := os.Stat(v.root)
 	if err != nil {
@@ -52,7 +70,50 @@ func (v *FSVault) Open(ctx context.Context) error {
 	if !info.IsDir() {
 		return &NotFoundError{ID: v.root}
 	}
-	return v.rebuildBacklinkIndex(ctx)
+
+	// Open the Bleve search index.
+	si, err := openSearchIndex(v.root, v.indexDir)
+	if err != nil {
+		return fmt.Errorf("opening search index: %w", err)
+	}
+	v.search = si
+
+	if err := v.rebuildBacklinkIndex(ctx); err != nil {
+		return err
+	}
+
+	// Seed the search index with all existing notes.
+	return v.rebuildSearchIndex(ctx)
+}
+
+// rebuildSearchIndex indexes every note currently in the vault.
+func (v *FSVault) rebuildSearchIndex(ctx context.Context) error {
+	if v.search == nil {
+		return nil
+	}
+	var ids []string
+	err := filepath.WalkDir(v.root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(v.root, path)
+		if relErr != nil {
+			return nil
+		}
+		ids = append(ids, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		note, readErr := v.Read(ctx, id)
+		if readErr != nil {
+			continue // skip unreadable notes
+		}
+		_ = v.search.indexNote(note) // best-effort; don't abort on index failure
+	}
+	return nil
 }
 
 // rebuildBacklinkIndex scans the entire vault and reconstructs the backlink index.
@@ -125,8 +186,13 @@ func (v *FSVault) unindexNoteLocked(sourceID string) {
 	delete(v.blOutgoing, sourceID)
 }
 
-// Close is a no-op for FSVault in this slice.
-func (v *FSVault) Close() error { return nil }
+// Close flushes the search index and releases resources.
+func (v *FSVault) Close() error {
+	if v.search != nil {
+		return v.search.close()
+	}
+	return nil
+}
 
 // List returns NoteMeta for every .md file under the given sub-path.
 // Pass "" or "." for the vault root. Non-recursive (top-level only).
@@ -222,6 +288,11 @@ func (v *FSVault) Create(ctx context.Context, note NoteMeta, body string) (*Note
 	v.indexNoteLocked(id, body)
 	v.blMu.Unlock()
 
+	// Add to search index.
+	if v.search != nil {
+		_ = v.search.indexNote(n)
+	}
+
 	return n, nil
 }
 
@@ -265,6 +336,11 @@ func (v *FSVault) Update(ctx context.Context, id string, body string, frontmatte
 	v.indexNoteLocked(id, body)
 	v.blMu.Unlock()
 
+	// Update search index.
+	if v.search != nil {
+		_ = v.search.indexNote(n)
+	}
+
 	return n, nil
 }
 
@@ -298,6 +374,11 @@ func (v *FSVault) Delete(ctx context.Context, id string) error {
 	}
 	v.blAllIDs = newIDs
 	v.blMu.Unlock()
+
+	// Remove from search index.
+	if v.search != nil {
+		_ = v.search.removeNote(id)
+	}
 
 	return nil
 }
@@ -365,11 +446,43 @@ func (v *FSVault) Move(ctx context.Context, fromID, toID string) error {
 	}
 	v.blMu.Unlock()
 
+	// Update search index: delete old entry, index under new ID.
+	if v.search != nil {
+		_ = v.search.removeNote(fromID)
+		if data != nil {
+			movedNote, readErr := v.readNote(toID, dstAbs)
+			if readErr == nil {
+				_ = v.search.indexNote(movedNote)
+			}
+		}
+	}
+
 	return nil
 }
 
-func (v *FSVault) Search(_ context.Context, _ SearchQuery) ([]NoteMeta, error) {
-	return nil, ErrNotImplemented
+// Search queries the Bleve full-text index and returns matching notes.
+// The SearchQuery.Text field is parsed as a query expression (see search.go).
+func (v *FSVault) Search(ctx context.Context, q SearchQuery) ([]NoteMeta, error) {
+	if v.search == nil {
+		return nil, fmt.Errorf("search index not available; call Open first")
+	}
+
+	hits, err := v.search.search(q)
+	if err != nil {
+		return nil, fmt.Errorf("search: %w", err)
+	}
+
+	results := make([]NoteMeta, 0, len(hits))
+	for _, hit := range hits {
+		note, readErr := v.Read(ctx, hit.ID)
+		if readErr != nil {
+			continue // note may have been deleted since last index update
+		}
+		meta := note.NoteMeta
+		meta.Snippet = hit.Snippet
+		results = append(results, meta)
+	}
+	return results, nil
 }
 
 // Backlinks returns all notes that contain a wikilink resolving to id.

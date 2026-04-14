@@ -560,3 +560,93 @@ body {
     padding: 4px 12px;
     font-style: italic;
 }
+
+/* Search bar */
+#search-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #313244;
+}
+
+#search-input {
+    flex: 1;
+    background: #313244;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    color: #cdd6f4;
+    padding: 3px 7px;
+    font-size: 12px;
+    outline: none;
+    min-width: 0;
+}
+
+#search-input:focus {
+    border-color: #89b4fa;
+}
+
+#search-clear-btn {
+    background: none;
+    border: none;
+    color: #585b70;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+#search-clear-btn:hover {
+    background: #45475a;
+    color: #cdd6f4;
+}
+
+/* Search results */
+#search-results {
+    overflow-y: auto;
+    flex: 1;
+}
+
+#search-results ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+#search-results li {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    margin: 1px 4px;
+    font-size: 13px;
+    color: #bac2de;
+}
+
+#search-results li:hover {
+    background: #313244;
+}
+
+#search-results li.active {
+    background: #45475a;
+}
+
+.search-snippet {
+    font-size: 11px;
+    color: #585b70;
+    margin-top: 3px;
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+/* Highlight fragments from Bleve (uses <em> tags) */
+.search-snippet em {
+    color: #f9e2af;
+    font-style: normal;
+    font-weight: 600;
+}

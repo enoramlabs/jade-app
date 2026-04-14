@@ -5,7 +5,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import {
     OpenVault, ListNotes, ReadNote,
     CreateNote, UpdateNote, DeleteNote, MoveNote,
-    RenderMarkdown, Backlinks, ResolveWikilink,
+    RenderMarkdown, Backlinks, ResolveWikilink, Search,
 } from '../wailsjs/go/main/App';
 import type { NoteMeta, Note } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
@@ -41,6 +41,9 @@ function App() {
     const [renameTarget, setRenameTarget] = useState<string | null>(null);
     const [renameTo, setRenameTo] = useState('');
     const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<NoteMeta[] | null>(null);
+    const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [conflict, setConflict] = useState<AppConflictError | null>(null);
     const pendingBody = useRef(''); // body the user was trying to save when conflict occurred
     const currentEtag = useRef('');
@@ -56,10 +59,11 @@ function App() {
         }, 100);
     }, []);
 
-    // Flush preview debounce on unmount.
+    // Flush debounces on unmount.
     useEffect(() => {
         return () => {
             if (previewDebounce.current) clearTimeout(previewDebounce.current);
+            if (searchDebounce.current) clearTimeout(searchDebounce.current);
         };
     }, []);
 
@@ -108,6 +112,8 @@ function App() {
             setPreviewHtml('');
             setBacklinks([]);
             setDirty(false);
+            setSearchQuery('');
+            setSearchResults(null);
         } catch (e: unknown) {
             setError(String(e));
         } finally {
@@ -281,6 +287,24 @@ function App() {
         updatePreview(val);
     }, [updatePreview]);
 
+    // Debounced search: fires 300ms after the user stops typing.
+    const handleSearchChange = useCallback((val: string) => {
+        setSearchQuery(val);
+        if (searchDebounce.current) clearTimeout(searchDebounce.current);
+        if (!val.trim()) {
+            setSearchResults(null);
+            return;
+        }
+        searchDebounce.current = setTimeout(async () => {
+            try {
+                const results = await Search(val.trim());
+                setSearchResults(results ?? []);
+            } catch {
+                setSearchResults([]);
+            }
+        }, 300);
+    }, []);
+
     // After preview HTML updates, mark unresolved wikilinks and add embed placeholders.
     useEffect(() => {
         const container = previewRef.current;
@@ -361,46 +385,96 @@ function App() {
             </div>
 
             <div id="main-content">
-                {/* Note tree */}
+                {/* Sidebar: search bar + note tree (or search results) */}
                 <aside id="note-tree">
-                    <div id="new-note-bar">
+                    {/* Search bar */}
+                    <div id="search-bar">
                         <input
+                            id="search-input"
                             type="text"
-                            placeholder="new-note.md"
-                            value={newNoteName}
-                            onChange={e => setNewNoteName(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && createNote()}
+                            placeholder="Search notes…"
+                            value={searchQuery}
+                            onChange={e => handleSearchChange(e.target.value)}
+                            disabled={notes.length === 0 && !searchQuery}
                         />
-                        <button onClick={createNote} disabled={loading}>+</button>
+                        {searchQuery && (
+                            <button
+                                id="search-clear-btn"
+                                onClick={() => handleSearchChange('')}
+                                title="Clear search"
+                            >✕</button>
+                        )}
                     </div>
-                    {notes.length === 0 ? (
-                        <p className="tree-empty">No notes found.</p>
+
+                    {/* Search results overlay */}
+                    {searchResults !== null ? (
+                        <div id="search-results">
+                            {searchResults.length === 0 ? (
+                                <p className="tree-empty">No results for &ldquo;{searchQuery}&rdquo;</p>
+                            ) : (
+                                <ul>
+                                    {searchResults.map(r => (
+                                        <li
+                                            key={r.ID}
+                                            className={selectedNote?.ID === r.ID ? 'active' : ''}
+                                            title={r.ID}
+                                            onClick={() => selectNote(r)}
+                                        >
+                                            <span className="note-title">{r.Title || r.ID}</span>
+                                            {r.Snippet && (
+                                                <span
+                                                    className="search-snippet"
+                                                    dangerouslySetInnerHTML={{ __html: r.Snippet }}
+                                                />
+                                            )}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
                     ) : (
-                        <ul>
-                            {notes.map(n => (
-                                <li
-                                    key={n.ID}
-                                    className={selectedNote?.ID === n.ID ? 'active' : ''}
-                                    title={n.ID}
-                                >
-                                    <span className="note-title" onClick={() => selectNote(n)}>
-                                        {n.Title || n.ID}
-                                    </span>
-                                    <span className="note-actions">
-                                        <button
-                                            className="icon-btn"
-                                            title="Rename"
-                                            onClick={() => { setRenameTarget(n.ID); setRenameTo(n.Title || ''); }}
-                                        >✎</button>
-                                        <button
-                                            className="icon-btn danger"
-                                            title="Delete"
-                                            onClick={() => setDeleteTarget(n.ID)}
-                                        >✕</button>
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
+                        <>
+                            {/* Normal note tree */}
+                            <div id="new-note-bar">
+                                <input
+                                    type="text"
+                                    placeholder="new-note.md"
+                                    value={newNoteName}
+                                    onChange={e => setNewNoteName(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && createNote()}
+                                />
+                                <button onClick={createNote} disabled={loading}>+</button>
+                            </div>
+                            {notes.length === 0 ? (
+                                <p className="tree-empty">No notes found.</p>
+                            ) : (
+                                <ul>
+                                    {notes.map(n => (
+                                        <li
+                                            key={n.ID}
+                                            className={selectedNote?.ID === n.ID ? 'active' : ''}
+                                            title={n.ID}
+                                        >
+                                            <span className="note-title" onClick={() => selectNote(n)}>
+                                                {n.Title || n.ID}
+                                            </span>
+                                            <span className="note-actions">
+                                                <button
+                                                    className="icon-btn"
+                                                    title="Rename"
+                                                    onClick={() => { setRenameTarget(n.ID); setRenameTo(n.Title || ''); }}
+                                                >✎</button>
+                                                <button
+                                                    className="icon-btn danger"
+                                                    title="Delete"
+                                                    onClick={() => setDeleteTarget(n.ID)}
+                                                >✕</button>
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </>
                     )}
                 </aside>
 

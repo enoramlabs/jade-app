@@ -49,3 +49,7 @@ export function Backlinks(arg1) {
 export function ResolveWikilink(arg1) {
     return window['go']['main']['App']['ResolveWikilink'](arg1);
 }
+
+export function Search(arg1) {
+    return window['go']['main']['App']['Search'](arg1);
+}

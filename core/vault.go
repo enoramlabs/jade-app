@@ -12,6 +12,7 @@ type NoteMeta struct {
 	Tags        []string       // frontmatter tags
 	Frontmatter map[string]any // parsed frontmatter fields
 	ModTime     time.Time      // last modification time
+	Snippet     string         // optional: populated by Search with a highlighted excerpt
 }
 
 // Note is a full note including body content.

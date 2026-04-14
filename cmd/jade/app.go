@@ -214,6 +214,16 @@ func (a *App) RenderMarkdown(source string) string {
 	return core.RenderMarkdownWithWikilinks(source)
 }
 
+// Search queries the vault's full-text index with an expression string.
+// The expression supports: free text, tag:x, key:value, AND, OR, parens.
+// Returns ranked NoteMeta results with optional Snippet fields populated.
+func (a *App) Search(query string) ([]core.NoteMeta, error) {
+	if a.vault == nil {
+		return nil, fmt.Errorf("no vault is open; call OpenVault first")
+	}
+	return a.vault.Search(context.Background(), core.SearchQuery{Text: query})
+}
+
 // ResolveWikilink maps a wikilink target string to a canonical vault-relative note ID.
 // Resolution is case-insensitive. Returns empty string if no note matches.
 func (a *App) ResolveWikilink(target string) (string, error) {

@@ -7,6 +7,7 @@ export interface NoteMeta {
     Tags: string[] | null;
     Frontmatter: Record<string, unknown> | null;
     ModTime: string;
+    Snippet: string;
 }
 
 export interface Note extends NoteMeta {
@@ -30,3 +31,4 @@ export function ExportHTML(arg1: string): Promise<string>;
 export function RenderMarkdown(arg1: string): Promise<string>;
 export function Backlinks(arg1: string): Promise<NoteMeta[]>;
 export function ResolveWikilink(arg1: string): Promise<string>;
+export function Search(arg1: string): Promise<NoteMeta[]>;
