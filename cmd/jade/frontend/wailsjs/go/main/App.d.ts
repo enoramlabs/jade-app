@@ -19,7 +19,14 @@ export interface VaultInfo {
     path: string;
 }
 
+export interface StartupState {
+    vaultPath: string;
+    vaultError: string;
+    recent: string[];
+}
+
 export function Greet(arg1: string): Promise<string>;
+export function GetStartupState(): Promise<StartupState>;
 export function OpenVault(arg1: string): Promise<VaultInfo>;
 export function ListNotes(arg1: string): Promise<NoteMeta[]>;
 export function ReadNote(arg1: string): Promise<Note>;
@@ -32,3 +39,6 @@ export function RenderMarkdown(arg1: string): Promise<string>;
 export function Backlinks(arg1: string): Promise<NoteMeta[]>;
 export function ResolveWikilink(arg1: string): Promise<string>;
 export function Search(arg1: string): Promise<NoteMeta[]>;
+export function RecentVaults(): Promise<string[]>;
+export function CreateVault(arg1: string): Promise<VaultInfo>;
+export function OpenInNewWindow(arg1: string): Promise<void>;

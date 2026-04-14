@@ -6,8 +6,9 @@ import {
     OpenVault, ListNotes, ReadNote,
     CreateNote, UpdateNote, DeleteNote, MoveNote,
     RenderMarkdown, Backlinks, ResolveWikilink, Search,
+    GetStartupState, CreateVault, OpenInNewWindow,
 } from '../wailsjs/go/main/App';
-import type { NoteMeta, Note } from '../wailsjs/go/main/App';
+import type { NoteMeta, Note, StartupState } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 import './App.css';
 
@@ -27,8 +28,117 @@ function parseConflictError(raw: unknown): AppConflictError | null {
     return null;
 }
 
+// ---- Welcome screen --------------------------------------------------------
+
+interface WelcomeScreenProps {
+    startupError: string;
+    recentVaults: string[];
+    onVaultOpened: (path: string) => void;
+    onError: (msg: string) => void;
+}
+
+function WelcomeScreen({ startupError, recentVaults, onVaultOpened, onError }: WelcomeScreenProps) {
+    const [loading, setLoading] = useState(false);
+
+    const handleOpenVault = useCallback(async () => {
+        setLoading(true);
+        try {
+            // Empty string triggers native dir-picker in the Go layer.
+            const info = await OpenVault('');
+            onVaultOpened(info.path);
+        } catch (e: unknown) {
+            onError(String(e));
+        } finally {
+            setLoading(false);
+        }
+    }, [onVaultOpened, onError]);
+
+    const handleCreateVault = useCallback(async () => {
+        setLoading(true);
+        try {
+            // Empty string triggers native dir-picker in the Go layer.
+            const info = await CreateVault('');
+            onVaultOpened(info.path);
+        } catch (e: unknown) {
+            onError(String(e));
+        } finally {
+            setLoading(false);
+        }
+    }, [onVaultOpened, onError]);
+
+    const handleOpenRecent = useCallback(async (path: string) => {
+        setLoading(true);
+        try {
+            const info = await OpenVault(path);
+            onVaultOpened(info.path);
+        } catch (e: unknown) {
+            onError(String(e));
+        } finally {
+            setLoading(false);
+        }
+    }, [onVaultOpened, onError]);
+
+    return (
+        <div id="welcome-screen">
+            <div id="welcome-card">
+                <h1 id="welcome-title">Jade</h1>
+                <p id="welcome-subtitle">Local-first Markdown knowledge base</p>
+
+                {startupError && (
+                    <div id="welcome-error">
+                        <span>{startupError}</span>
+                    </div>
+                )}
+
+                <div id="welcome-actions">
+                    <button
+                        className="welcome-btn primary"
+                        onClick={handleOpenVault}
+                        disabled={loading}
+                    >
+                        Open Vault
+                    </button>
+                    <button
+                        className="welcome-btn secondary"
+                        onClick={handleCreateVault}
+                        disabled={loading}
+                    >
+                        Create Vault
+                    </button>
+                </div>
+
+                {recentVaults.length > 0 && (
+                    <div id="welcome-recents">
+                        <h2 id="welcome-recents-title">Recent Vaults</h2>
+                        <ul id="welcome-recents-list">
+                            {recentVaults.map(vault => (
+                                <li key={vault}>
+                                    <button
+                                        className="recent-vault-item"
+                                        onClick={() => handleOpenRecent(vault)}
+                                        disabled={loading}
+                                        title={vault}
+                                    >
+                                        {vault}
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ---- Main editor view ------------------------------------------------------
+
 function App() {
+    const [startupLoaded, setStartupLoaded] = useState(false);
     const [vaultPath, setVaultPath] = useState('');
+    const [startupError, setStartupError] = useState('');
+    const [recentVaults, setRecentVaults] = useState<string[]>([]);
+
     const [notes, setNotes] = useState<NoteMeta[]>([]);
     const [selectedNote, setSelectedNote] = useState<Note | null>(null);
     const [editBody, setEditBody] = useState('');
@@ -45,18 +155,25 @@ function App() {
     const [searchResults, setSearchResults] = useState<NoteMeta[] | null>(null);
     const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [conflict, setConflict] = useState<AppConflictError | null>(null);
-    const pendingBody = useRef(''); // body the user was trying to save when conflict occurred
+    const pendingBody = useRef('');
     const currentEtag = useRef('');
     const previewDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
     const previewRef = useRef<HTMLDivElement | null>(null);
 
-    // Debounced preview update: re-renders the preview 100ms after source changes.
-    const updatePreview = useCallback((source: string) => {
-        if (previewDebounce.current) clearTimeout(previewDebounce.current);
-        previewDebounce.current = setTimeout(async () => {
-            const html = await RenderMarkdown(source);
-            setPreviewHtml(html);
-        }, 100);
+    // Load startup state on mount to determine welcome vs. editor view.
+    useEffect(() => {
+        GetStartupState()
+            .then((state: StartupState) => {
+                setStartupError(state.vaultError ?? '');
+                setRecentVaults(state.recent ?? []);
+                if (state.vaultPath) {
+                    setVaultPath(state.vaultPath);
+                    // Populate the note tree.
+                    return ListNotes('').then(list => setNotes(list ?? []));
+                }
+            })
+            .catch(() => { /* ignore — welcome screen will be shown */ })
+            .finally(() => setStartupLoaded(true));
     }, []);
 
     // Flush debounces on unmount.
@@ -67,20 +184,25 @@ function App() {
         };
     }, []);
 
+    // Debounced preview update: re-renders the preview 100ms after source changes.
+    const updatePreview = useCallback((source: string) => {
+        if (previewDebounce.current) clearTimeout(previewDebounce.current);
+        previewDebounce.current = setTimeout(async () => {
+            const html = await RenderMarkdown(source);
+            setPreviewHtml(html);
+        }, 100);
+    }, []);
+
     const refreshTree = useCallback(async () => {
         const list = await ListNotes('');
         setNotes(list ?? []);
     }, []);
 
     // Subscribe to vault.changed events emitted by the Go Watch bridge.
-    // When a note that is currently open changes externally, reload it.
-    // Always refresh the tree so new/deleted notes appear.
     useEffect(() => {
         const off = EventsOn('vault.changed', (evt: { type: string; id: string }) => {
-            // Refresh tree on any structural change.
             refreshTree().catch(() => {});
 
-            // If the currently open note changed externally, reload its content.
             setSelectedNote(prev => {
                 if (prev && prev.ID === evt.id && (evt.type === 'update' || evt.type === 'create')) {
                     ReadNote(evt.id)
@@ -99,6 +221,23 @@ function App() {
         });
         return off;
     }, [refreshTree]);
+
+    // Called by WelcomeScreen after a vault is opened.
+    const handleVaultOpened = useCallback(async (path: string) => {
+        setVaultPath(path);
+        setStartupError('');
+        setSelectedNote(null);
+        setEditBody('');
+        setPreviewHtml('');
+        setBacklinks([]);
+        setDirty(false);
+        setSearchQuery('');
+        setSearchResults(null);
+        try {
+            const list = await ListNotes('');
+            setNotes(list ?? []);
+        } catch { /* ignore */ }
+    }, []);
 
     const openVault = useCallback(async () => {
         const path = vaultPath.trim();
@@ -132,7 +271,6 @@ function App() {
             currentEtag.current = note.ETag;
             const html = await RenderMarkdown(note.Body);
             setPreviewHtml(html);
-            // Fetch backlinks for this note.
             const bl = await Backlinks(note.ID).catch(() => [] as NoteMeta[]);
             setBacklinks(bl ?? []);
         } catch (e: unknown) {
@@ -164,12 +302,10 @@ function App() {
         }
     }, [selectedNote, editBody, refreshTree]);
 
-    // Keep Mine: force-save using a fresh ETag obtained from the conflict info.
     const resolveKeepMine = useCallback(async () => {
         if (!selectedNote || !conflict) return;
         setLoading(true); setError(null);
         try {
-            // Use the fresh ETag from the conflict (current on-disk state) to overwrite.
             const updated = await UpdateNote(
                 selectedNote.ID, pendingBody.current, null, conflict.currentEtag,
             );
@@ -187,7 +323,6 @@ function App() {
         }
     }, [selectedNote, conflict, refreshTree]);
 
-    // Keep Theirs: reload the on-disk version, discard local edits.
     const resolveKeepTheirs = useCallback(async () => {
         if (!selectedNote || !conflict) return;
         if (!confirm('Discard your edits and reload from disk?')) return;
@@ -195,7 +330,6 @@ function App() {
         currentEtag.current = conflict.currentEtag;
         setDirty(false);
         setConflict(null);
-        // Reload the full note so selectedNote ETag is fresh.
         const fresh = await ReadNote(selectedNote.ID).catch(() => null);
         if (fresh) {
             setSelectedNote(fresh);
@@ -206,7 +340,6 @@ function App() {
         }
     }, [selectedNote, conflict]);
 
-    // Cancel: dismiss dialog, stay in dirty state with user's pending edits.
     const resolveCancel = useCallback(() => {
         setEditBody(pendingBody.current);
         setDirty(true);
@@ -287,7 +420,6 @@ function App() {
         updatePreview(val);
     }, [updatePreview]);
 
-    // Debounced search: fires 300ms after the user stops typing.
     const handleSearchChange = useCallback((val: string) => {
         setSearchQuery(val);
         if (searchDebounce.current) clearTimeout(searchDebounce.current);
@@ -310,7 +442,6 @@ function App() {
         const container = previewRef.current;
         if (!container) return;
 
-        // Mark wikilinks as resolved or broken based on current notes list.
         const noteIds = notes.map(n => n.ID.toLowerCase());
         container.querySelectorAll<HTMLElement>('[data-wikilink]').forEach(el => {
             const target = el.getAttribute('data-wikilink') ?? '';
@@ -329,7 +460,6 @@ function App() {
             }
         });
 
-        // Replace embed placeholders with a visible label showing the target.
         container.querySelectorAll<HTMLElement>('[data-embed]').forEach(el => {
             if (!el.dataset.embedRendered) {
                 const target = el.getAttribute('data-embed') ?? '';
@@ -340,7 +470,6 @@ function App() {
         });
     }, [previewHtml, notes]);
 
-    // Click delegation on the preview pane: intercept wikilink clicks.
     const handlePreviewClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         const target = (e.target as HTMLElement).closest('[data-wikilink]') as HTMLElement | null;
         if (!target) return;
@@ -349,27 +478,41 @@ function App() {
         if (!wikilinkTarget) return;
         ResolveWikilink(wikilinkTarget)
             .then(id => {
-                if (!id) return; // unresolved — do nothing (already styled broken)
+                if (!id) return;
                 const meta = notes.find(n => n.ID === id);
                 if (meta) selectNote(meta);
             })
             .catch(() => {});
     }, [notes, selectNote]);
 
+    const handleNewWindow = useCallback(() => {
+        OpenInNewWindow('').catch(() => {});
+    }, []);
+
+    // Show a blank shell until startup state is loaded.
+    if (!startupLoaded) {
+        return <div id="app-shell" />;
+    }
+
+    // Show welcome screen when no vault is open.
+    if (!vaultPath) {
+        return (
+            <WelcomeScreen
+                startupError={startupError}
+                recentVaults={recentVaults}
+                onVaultOpened={handleVaultOpened}
+                onError={msg => setStartupError(msg)}
+            />
+        );
+    }
+
     return (
         <div id="app-shell">
             {/* Toolbar */}
             <div id="toolbar">
-                <input
-                    id="vault-path-input"
-                    type="text"
-                    placeholder="Vault directory path…"
-                    value={vaultPath}
-                    onChange={e => setVaultPath(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && openVault()}
-                />
-                <button id="open-vault-btn" onClick={openVault} disabled={loading}>
-                    {loading ? 'Working…' : 'Open Vault'}
+                <span id="vault-path-label" title={vaultPath}>{vaultPath}</span>
+                <button id="change-vault-btn" onClick={() => setVaultPath('')} disabled={loading} title="Switch vault">
+                    Switch Vault
                 </button>
                 {selectedNote && (
                     <button
@@ -381,6 +524,9 @@ function App() {
                         {dirty ? 'Save*' : 'Saved'}
                     </button>
                 )}
+                <button id="new-window-btn" onClick={handleNewWindow} title="Open a new Jade window">
+                    New Window
+                </button>
                 {error && <span id="error-msg">{error}</span>}
             </div>
 

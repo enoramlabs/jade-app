@@ -53,3 +53,19 @@ export function ResolveWikilink(arg1) {
 export function Search(arg1) {
     return window['go']['main']['App']['Search'](arg1);
 }
+
+export function GetStartupState() {
+    return window['go']['main']['App']['GetStartupState']();
+}
+
+export function RecentVaults() {
+    return window['go']['main']['App']['RecentVaults']();
+}
+
+export function CreateVault(arg1) {
+    return window['go']['main']['App']['CreateVault'](arg1);
+}
+
+export function OpenInNewWindow(arg1) {
+    return window['go']['main']['App']['OpenInNewWindow'](arg1);
+}

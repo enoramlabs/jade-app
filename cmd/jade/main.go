@@ -4,6 +4,7 @@ package main
 
 import (
 	"embed"
+	"flag"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -14,10 +15,18 @@ import (
 var assets embed.FS
 
 func main() {
-	// Create an instance of the app structure
+	// --vault <path> opens a specific vault at launch (used by OpenInNewWindow).
+	vaultFlag := flag.String("vault", "", "Open a specific vault directory at launch")
+	flag.Parse()
+
 	app := NewApp()
 
-	// Create application with options
+	// If a vault path was passed on the command line, pre-set it so that
+	// initFromConfig (called from startup) will open it instead of the last-used vault.
+	if *vaultFlag != "" {
+		app.startupVaultOverride = *vaultFlag
+	}
+
 	err := wails.Run(&options.App{
 		Title:  "jade",
 		Width:  1024,
@@ -27,6 +36,7 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,
+		OnShutdown:       app.shutdown,
 		Bind: []interface{}{
 			app,
 		},
