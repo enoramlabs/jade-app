@@ -27,3 +27,4 @@ export function UpdateNote(arg1: string, arg2: string, arg3: Record<string, unkn
 export function DeleteNote(arg1: string): Promise<void>;
 export function MoveNote(arg1: string, arg2: string): Promise<void>;
 export function ExportHTML(arg1: string): Promise<string>;
+export function RenderMarkdown(arg1: string): Promise<string>;

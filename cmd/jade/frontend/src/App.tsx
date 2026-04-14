@@ -1,10 +1,11 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import {
     OpenVault, ListNotes, ReadNote,
     CreateNote, UpdateNote, DeleteNote, MoveNote,
+    RenderMarkdown,
 } from '../wailsjs/go/main/App';
 import type { NoteMeta, Note } from '../wailsjs/go/main/App';
 import './App.css';
@@ -14,6 +15,7 @@ function App() {
     const [notes, setNotes] = useState<NoteMeta[]>([]);
     const [selectedNote, setSelectedNote] = useState<Note | null>(null);
     const [editBody, setEditBody] = useState('');
+    const [previewHtml, setPreviewHtml] = useState('');
     const [dirty, setDirty] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -22,6 +24,23 @@ function App() {
     const [renameTo, setRenameTo] = useState('');
     const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
     const currentEtag = useRef('');
+    const previewDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Debounced preview update: re-renders the preview 100ms after source changes.
+    const updatePreview = useCallback((source: string) => {
+        if (previewDebounce.current) clearTimeout(previewDebounce.current);
+        previewDebounce.current = setTimeout(async () => {
+            const html = await RenderMarkdown(source);
+            setPreviewHtml(html);
+        }, 100);
+    }, []);
+
+    // Flush preview debounce on unmount.
+    useEffect(() => {
+        return () => {
+            if (previewDebounce.current) clearTimeout(previewDebounce.current);
+        };
+    }, []);
 
     const refreshTree = useCallback(async () => {
         const list = await ListNotes('');
@@ -37,6 +56,7 @@ function App() {
             await refreshTree();
             setSelectedNote(null);
             setEditBody('');
+            setPreviewHtml('');
             setDirty(false);
         } catch (e: unknown) {
             setError(String(e));
@@ -54,6 +74,8 @@ function App() {
             setEditBody(note.Body);
             setDirty(false);
             currentEtag.current = note.ETag;
+            const html = await RenderMarkdown(note.Body);
+            setPreviewHtml(html);
         } catch (e: unknown) {
             setError(String(e));
         } finally {
@@ -87,6 +109,7 @@ function App() {
             await refreshTree();
             setSelectedNote(note);
             setEditBody(note.Body);
+            setPreviewHtml('');
             setDirty(false);
             currentEtag.current = note.ETag;
             setNewNoteName('');
@@ -105,6 +128,7 @@ function App() {
             if (selectedNote?.ID === deleteTarget) {
                 setSelectedNote(null);
                 setEditBody('');
+                setPreviewHtml('');
                 setDirty(false);
             }
             await refreshTree();
@@ -140,6 +164,12 @@ function App() {
             setLoading(false);
         }
     }, [renameTarget, renameTo, selectedNote, refreshTree]);
+
+    const handleEditorChange = useCallback((val: string) => {
+        setEditBody(val);
+        setDirty(true);
+        updatePreview(val);
+    }, [updatePreview]);
 
     return (
         <div id="app-shell">
@@ -213,23 +243,33 @@ function App() {
                     )}
                 </aside>
 
-                {/* Editor pane */}
-                <main id="editor-pane">
-                    {selectedNote ? (
-                        <CodeMirror
-                            value={editBody}
-                            extensions={[markdown()]}
-                            theme={oneDark}
-                            height="100%"
-                            style={{ height: '100%', fontSize: '14px' }}
-                            onChange={val => { setEditBody(val); setDirty(true); }}
-                        />
-                    ) : (
-                        <div id="editor-placeholder">
-                            <p>Select a note from the tree to edit it.</p>
-                        </div>
-                    )}
-                </main>
+                {/* Split editor + preview */}
+                <div id="editor-split">
+                    {/* Source editor pane */}
+                    <div id="editor-pane">
+                        {selectedNote ? (
+                            <CodeMirror
+                                value={editBody}
+                                extensions={[markdown()]}
+                                theme={oneDark}
+                                height="100%"
+                                style={{ height: '100%', fontSize: '14px' }}
+                                onChange={handleEditorChange}
+                            />
+                        ) : (
+                            <div id="editor-placeholder">
+                                <p>Select a note from the tree to edit it.</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Live preview pane */}
+                    <div
+                        id="preview-pane"
+                        className="markdown-preview"
+                        dangerouslySetInnerHTML={{ __html: previewHtml || (selectedNote ? '' : '<p class="preview-placeholder">Preview will appear here.</p>') }}
+                    />
+                </div>
             </div>
 
             {/* Delete confirmation dialog */}

@@ -104,7 +104,7 @@ func (a *App) MoveNote(fromID, toID string) error {
 	return a.vault.Move(context.Background(), fromID, toID)
 }
 
-// ExportHTML renders a note as HTML. Stub — full implementation in sub-issue #4.
+// ExportHTML renders a note as HTML using the goldmark GFM renderer.
 func (a *App) ExportHTML(id string) (string, error) {
 	if a.vault == nil {
 		return "", fmt.Errorf("no vault is open; call OpenVault first")
@@ -113,6 +113,11 @@ func (a *App) ExportHTML(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Stub: return raw body wrapped in a <pre> block.
-	return "<pre>" + note.Body + "</pre>", nil
+	return core.RenderMarkdown(note.Body), nil
+}
+
+// RenderMarkdown renders arbitrary Markdown source to HTML without persisting.
+// This is used for the live preview pane. It requires no open vault.
+func (a *App) RenderMarkdown(source string) string {
+	return core.RenderMarkdown(source)
 }

@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -142,6 +143,43 @@ func TestApp_MoveNote_moves_note(t *testing.T) {
 	notes, _ := app.ListNotes("")
 	if len(notes) != 1 || notes[0].ID != "dst.md" {
 		t.Errorf("expected [dst.md], got %v", notes)
+	}
+}
+
+func TestApp_ExportHTML_returns_rendered_html(t *testing.T) {
+	dir := t.TempDir()
+	writeTestNote(t, dir, "note.md", "# Hello\n\nWorld.")
+	app := NewApp()
+	if _, err := app.OpenVault(dir); err != nil {
+		t.Fatalf("OpenVault: %v", err)
+	}
+
+	html, err := app.ExportHTML("note.md")
+	if err != nil {
+		t.Fatalf("ExportHTML: %v", err)
+	}
+	if !strings.Contains(html, "<h1>Hello</h1>") {
+		t.Errorf("ExportHTML: expected <h1>Hello</h1>, got: %s", html)
+	}
+}
+
+func TestApp_RenderMarkdown_returns_rendered_html(t *testing.T) {
+	app := NewApp()
+	html := app.RenderMarkdown("# Hi\n\n~~gone~~")
+	if !strings.Contains(html, "<h1>Hi</h1>") {
+		t.Errorf("RenderMarkdown: expected heading, got: %s", html)
+	}
+	if !strings.Contains(html, "<del>gone</del>") {
+		t.Errorf("RenderMarkdown: expected strikethrough, got: %s", html)
+	}
+}
+
+func TestApp_RenderMarkdown_requires_no_open_vault(t *testing.T) {
+	// RenderMarkdown is stateless — it should work without an open vault.
+	app := NewApp()
+	html := app.RenderMarkdown("hello")
+	if html == "" {
+		t.Error("RenderMarkdown should return non-empty HTML even without open vault")
 	}
 }
 

@@ -37,3 +37,7 @@ export function MoveNote(arg1, arg2) {
 export function ExportHTML(arg1) {
     return window['go']['main']['App']['ExportHTML'](arg1);
 }
+
+export function RenderMarkdown(arg1) {
+    return window['go']['main']['App']['RenderMarkdown'](arg1);
+}
