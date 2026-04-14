@@ -15,7 +15,7 @@ import (
 
 func TestApp_OpenVault_succeeds_on_existing_directory(t *testing.T) {
 	dir := t.TempDir()
-	app := NewApp()
+	app := newTestApp(t)
 
 	info, err := app.OpenVault(dir)
 	if err != nil {
@@ -27,7 +27,7 @@ func TestApp_OpenVault_succeeds_on_existing_directory(t *testing.T) {
 }
 
 func TestApp_OpenVault_returns_error_for_missing_directory(t *testing.T) {
-	app := NewApp()
+	app := newTestApp(t)
 	_, err := app.OpenVault("/nonexistent/path")
 	if err == nil {
 		t.Fatal("expected error for missing vault, got nil")
@@ -39,7 +39,7 @@ func TestApp_ListNotes_returns_notes_in_vault(t *testing.T) {
 	writeTestNote(t, dir, "alpha.md", "# Alpha")
 	writeTestNote(t, dir, "beta.md", "# Beta")
 
-	app := NewApp()
+	app := newTestApp(t)
 	if _, err := app.OpenVault(dir); err != nil {
 		t.Fatalf("OpenVault: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestApp_ReadNote_returns_note_body(t *testing.T) {
 	body := "# Hello\n\nContent."
 	writeTestNote(t, dir, "hello.md", body)
 
-	app := NewApp()
+	app := newTestApp(t)
 	if _, err := app.OpenVault(dir); err != nil {
 		t.Fatalf("OpenVault: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestApp_ReadNote_returns_note_body(t *testing.T) {
 }
 
 func TestApp_ReadNote_requires_open_vault(t *testing.T) {
-	app := NewApp()
+	app := newTestApp(t)
 	_, err := app.ReadNote("any.md")
 	if err == nil {
 		t.Fatal("expected error when no vault is open, got nil")
@@ -82,7 +82,7 @@ func TestApp_ReadNote_requires_open_vault(t *testing.T) {
 
 func TestApp_CreateNote_creates_note(t *testing.T) {
 	dir := t.TempDir()
-	app := NewApp()
+	app := newTestApp(t)
 	if _, err := app.OpenVault(dir); err != nil {
 		t.Fatalf("OpenVault: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestApp_CreateNote_creates_note(t *testing.T) {
 func TestApp_UpdateNote_updates_note(t *testing.T) {
 	dir := t.TempDir()
 	writeTestNote(t, dir, "note.md", "# Old")
-	app := NewApp()
+	app := newTestApp(t)
 	if _, err := app.OpenVault(dir); err != nil {
 		t.Fatalf("OpenVault: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestApp_UpdateNote_updates_note(t *testing.T) {
 func TestApp_DeleteNote_deletes_note(t *testing.T) {
 	dir := t.TempDir()
 	writeTestNote(t, dir, "note.md", "# Note")
-	app := NewApp()
+	app := newTestApp(t)
 	if _, err := app.OpenVault(dir); err != nil {
 		t.Fatalf("OpenVault: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestApp_DeleteNote_deletes_note(t *testing.T) {
 func TestApp_MoveNote_moves_note(t *testing.T) {
 	dir := t.TempDir()
 	writeTestNote(t, dir, "src.md", "# Src")
-	app := NewApp()
+	app := newTestApp(t)
 	if _, err := app.OpenVault(dir); err != nil {
 		t.Fatalf("OpenVault: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestApp_MoveNote_moves_note(t *testing.T) {
 func TestApp_ExportHTML_returns_rendered_html(t *testing.T) {
 	dir := t.TempDir()
 	writeTestNote(t, dir, "note.md", "# Hello\n\nWorld.")
-	app := NewApp()
+	app := newTestApp(t)
 	if _, err := app.OpenVault(dir); err != nil {
 		t.Fatalf("OpenVault: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestApp_ExportHTML_returns_rendered_html(t *testing.T) {
 }
 
 func TestApp_RenderMarkdown_returns_rendered_html(t *testing.T) {
-	app := NewApp()
+	app := newTestApp(t)
 	html := app.RenderMarkdown("# Hi\n\n~~gone~~")
 	if !strings.Contains(html, "<h1>Hi</h1>") {
 		t.Errorf("RenderMarkdown: expected heading, got: %s", html)
@@ -177,7 +177,7 @@ func TestApp_RenderMarkdown_returns_rendered_html(t *testing.T) {
 
 func TestApp_RenderMarkdown_requires_no_open_vault(t *testing.T) {
 	// RenderMarkdown is stateless — it should work without an open vault.
-	app := NewApp()
+	app := newTestApp(t)
 	html := app.RenderMarkdown("hello")
 	if html == "" {
 		t.Error("RenderMarkdown should return non-empty HTML even without open vault")
@@ -188,7 +188,7 @@ func TestApp_Backlinks_returns_linking_notes(t *testing.T) {
 	dir := t.TempDir()
 	writeTestNote(t, dir, "A.md", "Links to [[B]].")
 	writeTestNote(t, dir, "B.md", "# B")
-	app := NewApp()
+	app := newTestApp(t)
 	if _, err := app.OpenVault(dir); err != nil {
 		t.Fatalf("OpenVault: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestApp_Backlinks_returns_linking_notes(t *testing.T) {
 func TestApp_UpdateNote_returns_structured_conflict_error(t *testing.T) {
 	dir := t.TempDir()
 	writeTestNote(t, dir, "note.md", "# Original")
-	app := NewApp()
+	app := newTestApp(t)
 	if _, err := app.OpenVault(dir); err != nil {
 		t.Fatalf("OpenVault: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestApp_ResolveWikilink_resolves_to_canonical_id(t *testing.T) {
 	dir := t.TempDir()
 	writeTestNote(t, dir, "Alpha.md", "# Alpha")
 	writeTestNote(t, dir, "beta.md", "# Beta")
-	app := NewApp()
+	app := newTestApp(t)
 	if _, err := app.OpenVault(dir); err != nil {
 		t.Fatalf("OpenVault: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestApp_ResolveWikilink_resolves_to_canonical_id(t *testing.T) {
 func TestApp_ResolveWikilink_returns_empty_for_unresolved(t *testing.T) {
 	dir := t.TempDir()
 	writeTestNote(t, dir, "note.md", "# Note")
-	app := NewApp()
+	app := newTestApp(t)
 	if _, err := app.OpenVault(dir); err != nil {
 		t.Fatalf("OpenVault: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestApp_ResolveWikilink_returns_empty_for_unresolved(t *testing.T) {
 // ---- Sub-issue #9 tests: welcome screen, recent vaults, multi-window ----
 
 func TestApp_GetStartupState_no_vault_returns_empty_path(t *testing.T) {
-	app := NewApp()
+	app := newTestApp(t)
 	state := app.GetStartupState()
 	if state.VaultPath != "" {
 		t.Errorf("VaultPath should be empty before any vault is opened, got %q", state.VaultPath)
@@ -373,7 +373,7 @@ func TestApp_CreateVault_scaffolds_directory_and_welcome_note(t *testing.T) {
 }
 
 func TestApp_CreateVault_returns_error_for_empty_path_without_runtime(t *testing.T) {
-	app := NewApp() // no ctx — simulates unit-test environment without Wails runtime
+	app := newTestApp(t) // no ctx — simulates unit-test environment without Wails runtime
 	_, err := app.CreateVault("")
 	if err == nil {
 		t.Fatal("expected error for empty path without runtime, got nil")
@@ -483,10 +483,25 @@ func newAppWithConfigDir(t *testing.T) *App {
 	return newAppWithSpecificConfig(t, cfgPath)
 }
 
+// newTestApp creates an App whose cfgPath is pinned to a per-test temp
+// directory. This isolates every test run from the real user's
+// ~/.jade/config.json — otherwise every test that calls OpenVault with a
+// t.TempDir() path would persist that tempdir into recentVaults on disk,
+// polluting the real config file.
+func newTestApp(t *testing.T) *App {
+	t.Helper()
+	cfgDir := t.TempDir()
+	app := NewApp()
+	app.cfgPath = filepath.Join(cfgDir, "config.json")
+	return app
+}
+
 // newAppWithSpecificConfig creates an App pinned to the given config file path.
+// Used by tests that need to seed a specific config on disk and verify
+// how the app reads it.
 func newAppWithSpecificConfig(t *testing.T, cfgPath string) *App {
 	t.Helper()
-	app := NewApp()
+	app := newTestApp(t)
 	app.cfgPath = cfgPath
 	return app
 }

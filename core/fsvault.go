@@ -93,7 +93,18 @@ func (v *FSVault) rebuildSearchIndex(ctx context.Context) error {
 	}
 	var ids []string
 	err := filepath.WalkDir(v.root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			// Skip well-known noise directories (node_modules, .git, build
+			// output, venvs, etc.). Never skip the vault root itself.
+			if path != v.root && shouldSkipDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".md") {
 			return nil
 		}
 		rel, relErr := filepath.Rel(v.root, path)
@@ -120,7 +131,18 @@ func (v *FSVault) rebuildSearchIndex(ctx context.Context) error {
 func (v *FSVault) rebuildBacklinkIndex(_ context.Context) error {
 	var ids []string
 	err := filepath.WalkDir(v.root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			// Skip well-known noise directories (node_modules, .git, build
+			// output, venvs, etc.). Never skip the vault root itself.
+			if path != v.root && shouldSkipDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".md") {
 			return nil
 		}
 		rel, relErr := filepath.Rel(v.root, path)
@@ -606,4 +628,39 @@ func (v *FSVault) validatePath(path string) error {
 		return &PathTraversalError{ID: path}
 	}
 	return nil
+}
+
+// skipDirNames is the set of non-hidden directory names that the vault
+// walker will never descend into. Hidden directories (names starting with
+// ".") are skipped unconditionally — this covers .git, .svn, .hg, .next,
+// .svelte-kit, .turbo, .venv, .gradle, .idea, .vscode, .cache, etc.
+//
+// The explicit list covers well-known noise directories that don't start
+// with a dot: package managers, build output, language toolchains.
+// Without this filter, opening a repository-as-vault would attempt to
+// index every README.md inside node_modules — often thousands of files.
+var skipDirNames = map[string]struct{}{
+	"node_modules": {},
+	"dist":         {},
+	"build":        {},
+	"out":          {},
+	"target":       {},
+	"vendor":       {},
+	"venv":         {},
+	"env":          {},
+	"__pycache__":  {},
+}
+
+// shouldSkipDir reports whether a directory with the given basename should
+// be skipped during a vault walk. Called with the directory's base name
+// only (not a full path).
+func shouldSkipDir(name string) bool {
+	if name == "" {
+		return false
+	}
+	if strings.HasPrefix(name, ".") {
+		return true
+	}
+	_, ok := skipDirNames[name]
+	return ok
 }

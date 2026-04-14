@@ -581,3 +581,65 @@ func openVault(t *testing.T, dir string) *core.FSVault {
 	}
 	return v
 }
+
+// Regression test: opening a repo-shaped directory (containing
+// node_modules, .git, dist, and other noise) must NOT index markdown
+// files inside those directories. Without the skip filter, opening the
+// jade-app repo as a vault attempts to scan thousands of README.md
+// files inside node_modules and hangs for minutes.
+func TestFSVault_Open_skips_noise_directories(t *testing.T) {
+	dir := t.TempDir()
+
+	// Real notes at the root and in a legitimate subdirectory.
+	writeNote(t, dir, "real.md", "# Real note\nThis should be indexed.")
+	if err := os.Mkdir(filepath.Join(dir, "notes"), 0o755); err != nil {
+		t.Fatalf("mkdir notes: %v", err)
+	}
+	writeNote(t, filepath.Join(dir, "notes"), "child.md", "# Child\nAlso indexed.")
+
+	// Noise directories that should be skipped entirely. Each gets a
+	// bogus .md file that must NOT appear in search results or backlinks.
+	noiseDirs := []string{
+		"node_modules",
+		".git",
+		".svelte-kit",
+		".next",
+		"dist",
+		"build",
+		"target",
+		"venv",
+		"__pycache__",
+		".cache",
+	}
+	for _, nd := range noiseDirs {
+		full := filepath.Join(dir, nd, "fake-pkg")
+		if err := os.MkdirAll(full, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", nd, err)
+		}
+		writeNote(t, full, "README.md", "noise marker SENTINEL_STRING")
+	}
+
+	v := openVault(t, dir)
+	defer v.Close()
+
+	// Negative: search for the noise marker string; nothing should match.
+	results, err := v.Search(context.Background(), core.SearchQuery{Text: "SENTINEL_STRING"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("noise-directory notes should not be indexed, got %d hits", len(results))
+		for _, r := range results {
+			t.Logf("  unexpected hit: %s", r.ID)
+		}
+	}
+
+	// Positive control: real notes ARE indexed.
+	hits, err := v.Search(context.Background(), core.SearchQuery{Text: "indexed"})
+	if err != nil {
+		t.Fatalf("Search positive: %v", err)
+	}
+	if len(hits) < 2 {
+		t.Errorf("expected both real notes to be indexed, got %d", len(hits))
+	}
+}
