@@ -187,7 +187,15 @@ func (a *App) MoveNote(fromID, toID string) error {
 	return a.vault.Move(context.Background(), fromID, toID)
 }
 
-// ExportHTML renders a note as HTML using the goldmark GFM renderer.
+// Backlinks returns all notes that contain a wikilink resolving to id.
+func (a *App) Backlinks(id string) ([]core.NoteMeta, error) {
+	if a.vault == nil {
+		return nil, fmt.Errorf("no vault is open; call OpenVault first")
+	}
+	return a.vault.Backlinks(context.Background(), id)
+}
+
+// ExportHTML renders a note as HTML using the goldmark GFM + wikilink renderer.
 func (a *App) ExportHTML(id string) (string, error) {
 	if a.vault == nil {
 		return "", fmt.Errorf("no vault is open; call OpenVault first")
@@ -196,11 +204,12 @@ func (a *App) ExportHTML(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return core.RenderMarkdown(note.Body), nil
+	return core.RenderMarkdownWithWikilinks(note.Body), nil
 }
 
 // RenderMarkdown renders arbitrary Markdown source to HTML without persisting.
 // This is used for the live preview pane. It requires no open vault.
+// Wikilinks are rendered as <a data-wikilink="..."> anchors.
 func (a *App) RenderMarkdown(source string) string {
-	return core.RenderMarkdown(source)
+	return core.RenderMarkdownWithWikilinks(source)
 }

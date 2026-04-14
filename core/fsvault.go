@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,18 +22,29 @@ type FSVault struct {
 	root    string
 	mu      sync.Map   // per-path *sync.Mutex for concurrent writes
 	ignored *ignoreSet // paths recently written by FSVault itself
+
+	// Backlink index — protected by blMu.
+	// blOutgoing: sourceID → set of resolved target IDs
+	// blIncoming: targetID → set of source IDs that link to it
+	// blAllIDs:   current flat list of all note IDs (for resolver)
+	blMu       sync.RWMutex
+	blOutgoing map[string]map[string]struct{}
+	blIncoming map[string]map[string]struct{}
+	blAllIDs   []string
 }
 
 // NewFSVault creates an FSVault rooted at the given directory path.
 func NewFSVault(root string) *FSVault {
 	return &FSVault{
-		root:    filepath.Clean(root),
-		ignored: newIgnoreSet(),
+		root:       filepath.Clean(root),
+		ignored:    newIgnoreSet(),
+		blOutgoing: make(map[string]map[string]struct{}),
+		blIncoming: make(map[string]map[string]struct{}),
 	}
 }
 
-// Open verifies the vault root exists.
-func (v *FSVault) Open(_ context.Context) error {
+// Open verifies the vault root exists and builds the backlink index.
+func (v *FSVault) Open(ctx context.Context) error {
 	info, err := os.Stat(v.root)
 	if err != nil {
 		return err
@@ -40,7 +52,77 @@ func (v *FSVault) Open(_ context.Context) error {
 	if !info.IsDir() {
 		return &NotFoundError{ID: v.root}
 	}
+	return v.rebuildBacklinkIndex(ctx)
+}
+
+// rebuildBacklinkIndex scans the entire vault and reconstructs the backlink index.
+func (v *FSVault) rebuildBacklinkIndex(_ context.Context) error {
+	var ids []string
+	err := filepath.WalkDir(v.root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(v.root, path)
+		if relErr != nil {
+			return nil
+		}
+		ids = append(ids, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	v.blMu.Lock()
+	defer v.blMu.Unlock()
+	v.blAllIDs = ids
+	v.blOutgoing = make(map[string]map[string]struct{})
+	v.blIncoming = make(map[string]map[string]struct{})
+
+	for _, id := range ids {
+		absPath := filepath.Join(v.root, filepath.FromSlash(id))
+		data, readErr := os.ReadFile(absPath)
+		if readErr != nil {
+			continue
+		}
+		v.indexNoteLocked(id, string(data))
+	}
 	return nil
+}
+
+// indexNoteLocked adds a note's outgoing wikilinks to the index.
+// Must be called with blMu write-locked.
+func (v *FSVault) indexNoteLocked(sourceID, body string) {
+	links := ExtractWikilinks(body)
+	targets := make(map[string]struct{})
+	for _, wl := range links {
+		if wl.IsEmbed {
+			continue
+		}
+		resolved := ResolveWikilink(wl.Target, v.blAllIDs)
+		if resolved != "" {
+			targets[resolved] = struct{}{}
+		}
+	}
+	v.blOutgoing[sourceID] = targets
+	for target := range targets {
+		if v.blIncoming[target] == nil {
+			v.blIncoming[target] = make(map[string]struct{})
+		}
+		v.blIncoming[target][sourceID] = struct{}{}
+	}
+}
+
+// unindexNoteLocked removes all outgoing links from sourceID from the index.
+// Must be called with blMu write-locked.
+func (v *FSVault) unindexNoteLocked(sourceID string) {
+	for target := range v.blOutgoing[sourceID] {
+		delete(v.blIncoming[target], sourceID)
+		if len(v.blIncoming[target]) == 0 {
+			delete(v.blIncoming, target)
+		}
+	}
+	delete(v.blOutgoing, sourceID)
 }
 
 // Close is a no-op for FSVault in this slice.
@@ -129,7 +211,18 @@ func (v *FSVault) Create(ctx context.Context, note NoteMeta, body string) (*Note
 		return nil, err
 	}
 
-	return v.readNote(id, absPath)
+	n, err := v.readNote(id, absPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add to backlink index.
+	v.blMu.Lock()
+	v.blAllIDs = append(v.blAllIDs, id)
+	v.indexNoteLocked(id, body)
+	v.blMu.Unlock()
+
+	return n, nil
 }
 
 // Update replaces the body of an existing note.
@@ -161,7 +254,18 @@ func (v *FSVault) Update(ctx context.Context, id string, body string, frontmatte
 		return nil, err
 	}
 
-	return v.readNote(id, absPath)
+	n, err := v.readNote(id, absPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update backlink index: remove old links, add new ones.
+	v.blMu.Lock()
+	v.unindexNoteLocked(id)
+	v.indexNoteLocked(id, body)
+	v.blMu.Unlock()
+
+	return n, nil
 }
 
 // Delete removes a note permanently.
@@ -178,7 +282,24 @@ func (v *FSVault) Delete(ctx context.Context, id string) error {
 		return &NotFoundError{ID: id}
 	}
 	v.ignored.add(absPath, selfWriteTTL)
-	return os.Remove(absPath)
+	if err := os.Remove(absPath); err != nil {
+		return err
+	}
+
+	// Remove from backlink index.
+	v.blMu.Lock()
+	v.unindexNoteLocked(id)
+	// Remove id from allIDs.
+	newIDs := v.blAllIDs[:0]
+	for _, existing := range v.blAllIDs {
+		if existing != id {
+			newIDs = append(newIDs, existing)
+		}
+	}
+	v.blAllIDs = newIDs
+	v.blMu.Unlock()
+
+	return nil
 }
 
 // Move renames/moves a note from fromID to toID.
@@ -219,15 +340,61 @@ func (v *FSVault) Move(ctx context.Context, fromID, toID string) error {
 	}
 	v.ignored.add(srcAbs, selfWriteTTL)
 	v.ignored.add(dstAbs, selfWriteTTL)
-	return os.Rename(srcAbs, dstAbs)
+	if err := os.Rename(srcAbs, dstAbs); err != nil {
+		return err
+	}
+
+	// Update backlink index: re-index moved note under new ID.
+	data, _ := os.ReadFile(dstAbs)
+	v.blMu.Lock()
+	v.unindexNoteLocked(fromID)
+	// Replace fromID with toID in allIDs.
+	found := false
+	for i, id := range v.blAllIDs {
+		if id == fromID {
+			v.blAllIDs[i] = toID
+			found = true
+			break
+		}
+	}
+	if !found {
+		v.blAllIDs = append(v.blAllIDs, toID)
+	}
+	if data != nil {
+		v.indexNoteLocked(toID, string(data))
+	}
+	v.blMu.Unlock()
+
+	return nil
 }
 
 func (v *FSVault) Search(_ context.Context, _ SearchQuery) ([]NoteMeta, error) {
 	return nil, ErrNotImplemented
 }
 
-func (v *FSVault) Backlinks(_ context.Context, _ string) ([]NoteMeta, error) {
-	return nil, ErrNotImplemented
+// Backlinks returns all notes that contain a wikilink resolving to id.
+func (v *FSVault) Backlinks(ctx context.Context, id string) ([]NoteMeta, error) {
+	if err := v.validatePath(id); err != nil {
+		return nil, err
+	}
+
+	v.blMu.RLock()
+	sources := v.blIncoming[id]
+	ids := make([]string, 0, len(sources))
+	for src := range sources {
+		ids = append(ids, src)
+	}
+	v.blMu.RUnlock()
+
+	result := make([]NoteMeta, 0, len(ids))
+	for _, src := range ids {
+		note, err := v.Read(ctx, src)
+		if err != nil {
+			continue // note may have been deleted since indexing
+		}
+		result = append(result, note.NoteMeta)
+	}
+	return result, nil
 }
 
 // lockPath acquires (and returns) the per-path mutex for id.

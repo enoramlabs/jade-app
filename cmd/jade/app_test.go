@@ -184,6 +184,24 @@ func TestApp_RenderMarkdown_requires_no_open_vault(t *testing.T) {
 	}
 }
 
+func TestApp_Backlinks_returns_linking_notes(t *testing.T) {
+	dir := t.TempDir()
+	writeTestNote(t, dir, "A.md", "Links to [[B]].")
+	writeTestNote(t, dir, "B.md", "# B")
+	app := NewApp()
+	if _, err := app.OpenVault(dir); err != nil {
+		t.Fatalf("OpenVault: %v", err)
+	}
+
+	backlinks, err := app.Backlinks("B.md")
+	if err != nil {
+		t.Fatalf("Backlinks: %v", err)
+	}
+	if len(backlinks) != 1 || backlinks[0].ID != "A.md" {
+		t.Errorf("Backlinks('B.md') = %v, want [{ID:A.md}]", backlinks)
+	}
+}
+
 func TestApp_UpdateNote_returns_structured_conflict_error(t *testing.T) {
 	dir := t.TempDir()
 	writeTestNote(t, dir, "note.md", "# Original")
