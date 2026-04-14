@@ -2,11 +2,57 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/enoramlabs/jade-app/core"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// appError is a structured error that crosses the Wails bridge as JSON.
+// The frontend parses the error string as JSON to detect structured errors.
+type appError struct {
+	Code           string `json:"code"`
+	Message        string `json:"message"`
+	CurrentContent string `json:"currentContent,omitempty"`
+	CurrentETag    string `json:"currentEtag,omitempty"`
+}
+
+func (e *appError) Error() string {
+	b, _ := json.Marshal(e)
+	return string(b)
+}
+
+// toAppError converts a core error to an appError for the Wails bridge.
+// Returns nil if err is nil.
+func toAppError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var ce *core.ConflictError
+	if errors.As(err, &ce) {
+		ae := &appError{Code: "CONFLICT", Message: err.Error()}
+		if ce.Current != nil {
+			ae.CurrentContent = ce.Current.Body
+			ae.CurrentETag = ce.Current.ETag
+		}
+		return ae
+	}
+	var nfe *core.NotFoundError
+	if errors.As(err, &nfe) {
+		return &appError{Code: "NOT_FOUND", Message: err.Error()}
+	}
+	var encErr *core.EncodingError
+	if errors.As(err, &encErr) {
+		return &appError{Code: "ENCODING_ERROR", Message: err.Error()}
+	}
+	var pte *core.PathTraversalError
+	if errors.As(err, &pte) {
+		return &appError{Code: "PATH_TRAVERSAL", Message: err.Error()}
+	}
+	return &appError{Code: "UNKNOWN", Message: err.Error()}
+}
 
 // VaultInfo is returned by OpenVault and contains basic vault metadata.
 type VaultInfo struct {
@@ -112,6 +158,7 @@ func (a *App) CreateNote(path string, body string, frontmatter map[string]any) (
 
 // UpdateNote replaces the body of an existing note.
 // etag is used for optimistic concurrency; pass empty string to skip the check.
+// On ETag mismatch the returned error marshals to JSON with code "CONFLICT".
 func (a *App) UpdateNote(id string, body string, frontmatter map[string]any, etag string) (*core.Note, error) {
 	if a.vault == nil {
 		return nil, fmt.Errorf("no vault is open; call OpenVault first")
@@ -120,7 +167,8 @@ func (a *App) UpdateNote(id string, body string, frontmatter map[string]any, eta
 	if err != nil {
 		return nil, err
 	}
-	return a.vault.Update(context.Background(), id, fullBody, frontmatter, etag)
+	note, err := a.vault.Update(context.Background(), id, fullBody, frontmatter, etag)
+	return note, toAppError(err)
 }
 
 // DeleteNote removes a note permanently.

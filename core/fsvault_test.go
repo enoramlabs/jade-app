@@ -520,6 +520,50 @@ func TestFSVault_concurrent_writes_to_same_note_serialize(t *testing.T) {
 	}
 }
 
+// --- Conflict detection integration ---
+
+func TestFSVault_Update_conflict_contains_current_on_disk_content(t *testing.T) {
+	dir := t.TempDir()
+	writeNote(t, dir, "note.md", "# Original")
+	v := openVault(t, dir)
+	defer v.Close()
+
+	// Read to get the current ETag.
+	original, err := v.Read(context.Background(), "note.md")
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	staleEtag := original.ETag
+
+	// Simulate an external editor writing a new version.
+	externalBody := "# Changed externally"
+	if err := os.WriteFile(filepath.Join(dir, "note.md"), []byte(externalBody), 0o644); err != nil {
+		t.Fatalf("external write: %v", err)
+	}
+
+	// Attempt an update with the now-stale ETag.
+	_, err = v.Update(context.Background(), "note.md", "# My version", nil, staleEtag)
+	if err == nil {
+		t.Fatal("expected ConflictError, got nil")
+	}
+	var ce *core.ConflictError
+	if !errors.As(err, &ce) {
+		t.Fatalf("expected *core.ConflictError, got %T: %v", err, err)
+	}
+	if ce.Current == nil {
+		t.Fatal("ConflictError.Current must not be nil")
+	}
+	if ce.Current.Body != externalBody {
+		t.Errorf("ConflictError.Current.Body = %q, want %q", ce.Current.Body, externalBody)
+	}
+	if ce.Current.ETag == "" {
+		t.Error("ConflictError.Current.ETag must be non-empty")
+	}
+	if ce.Current.ETag == staleEtag {
+		t.Error("ConflictError.Current.ETag should differ from the stale ETag")
+	}
+}
+
 // --- helpers ---
 
 func writeNote(t *testing.T, dir, name, content string) {

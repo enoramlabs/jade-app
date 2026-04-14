@@ -404,3 +404,65 @@ body {
 #dialog-actions button.danger {
     background: #f38ba8;
 }
+
+/* Conflict resolution dialog */
+#conflict-dialog {
+    background: #1e1e2e;
+    border: 1px solid #f38ba8;
+    border-radius: 8px;
+    padding: 20px 24px;
+    width: min(760px, 90vw);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: hidden;
+}
+
+#conflict-dialog h3 {
+    color: #f38ba8;
+    font-size: 15px;
+}
+
+#conflict-dialog p {
+    font-size: 13px;
+    color: #a6adc8;
+}
+
+#conflict-versions {
+    display: flex;
+    gap: 12px;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.conflict-version {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: hidden;
+}
+
+.conflict-version h4 {
+    font-size: 12px;
+    color: #bac2de;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+}
+
+.conflict-preview {
+    flex: 1;
+    background: #181825;
+    border: 1px solid #313244;
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-family: monospace;
+    font-size: 12px;
+    color: #cdd6f4;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

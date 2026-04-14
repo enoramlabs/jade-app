@@ -11,6 +11,22 @@ import type { NoteMeta, Note } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 import './App.css';
 
+// Shape of the structured error JSON returned by the Wails bridge on conflict.
+interface AppConflictError {
+    code: 'CONFLICT';
+    message: string;
+    currentContent: string;
+    currentEtag: string;
+}
+
+function parseConflictError(raw: unknown): AppConflictError | null {
+    try {
+        const obj = JSON.parse(String(raw));
+        if (obj && obj.code === 'CONFLICT') return obj as AppConflictError;
+    } catch { /* not JSON */ }
+    return null;
+}
+
 function App() {
     const [vaultPath, setVaultPath] = useState('');
     const [notes, setNotes] = useState<NoteMeta[]>([]);
@@ -24,6 +40,8 @@ function App() {
     const [renameTarget, setRenameTarget] = useState<string | null>(null);
     const [renameTo, setRenameTo] = useState('');
     const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+    const [conflict, setConflict] = useState<AppConflictError | null>(null);
+    const pendingBody = useRef(''); // body the user was trying to save when conflict occurred
     const currentEtag = useRef('');
     const previewDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -122,11 +140,66 @@ function App() {
             currentEtag.current = updated.ETag;
             await refreshTree();
         } catch (e: unknown) {
-            setError(String(e));
+            const conflictErr = parseConflictError(e);
+            if (conflictErr) {
+                pendingBody.current = editBody;
+                setConflict(conflictErr);
+            } else {
+                setError(String(e));
+            }
         } finally {
             setLoading(false);
         }
     }, [selectedNote, editBody, refreshTree]);
+
+    // Keep Mine: force-save using a fresh ETag obtained from the conflict info.
+    const resolveKeepMine = useCallback(async () => {
+        if (!selectedNote || !conflict) return;
+        setLoading(true); setError(null);
+        try {
+            // Use the fresh ETag from the conflict (current on-disk state) to overwrite.
+            const updated = await UpdateNote(
+                selectedNote.ID, pendingBody.current, null, conflict.currentEtag,
+            );
+            setSelectedNote(updated);
+            setEditBody(updated.Body);
+            setDirty(false);
+            currentEtag.current = updated.ETag;
+            setConflict(null);
+            await refreshTree();
+        } catch (e: unknown) {
+            setError(String(e));
+            setConflict(null);
+        } finally {
+            setLoading(false);
+        }
+    }, [selectedNote, conflict, refreshTree]);
+
+    // Keep Theirs: reload the on-disk version, discard local edits.
+    const resolveKeepTheirs = useCallback(async () => {
+        if (!selectedNote || !conflict) return;
+        if (!confirm('Discard your edits and reload from disk?')) return;
+        setEditBody(conflict.currentContent);
+        currentEtag.current = conflict.currentEtag;
+        setDirty(false);
+        setConflict(null);
+        // Reload the full note so selectedNote ETag is fresh.
+        const fresh = await ReadNote(selectedNote.ID).catch(() => null);
+        if (fresh) {
+            setSelectedNote(fresh);
+            setEditBody(fresh.Body);
+            currentEtag.current = fresh.ETag;
+            const html = await RenderMarkdown(fresh.Body).catch(() => '');
+            setPreviewHtml(html);
+        }
+    }, [selectedNote, conflict]);
+
+    // Cancel: dismiss dialog, stay in dirty state with user's pending edits.
+    const resolveCancel = useCallback(() => {
+        setEditBody(pendingBody.current);
+        setDirty(true);
+        setConflict(null);
+    }, []);
 
     const createNote = useCallback(async () => {
         const name = newNoteName.trim();
@@ -329,6 +402,31 @@ function App() {
                         <div id="dialog-actions">
                             <button onClick={confirmRename}>Rename</button>
                             <button onClick={() => { setRenameTarget(null); setRenameTo(''); }}>Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Conflict resolution dialog */}
+            {conflict && (
+                <div id="dialog-overlay">
+                    <div id="conflict-dialog">
+                        <h3>Edit conflict detected</h3>
+                        <p>This note was modified externally while you were editing it.</p>
+                        <div id="conflict-versions">
+                            <div className="conflict-version">
+                                <h4>Your version</h4>
+                                <pre className="conflict-preview">{pendingBody.current}</pre>
+                            </div>
+                            <div className="conflict-version">
+                                <h4>Their version (on disk)</h4>
+                                <pre className="conflict-preview">{conflict.currentContent}</pre>
+                            </div>
+                        </div>
+                        <div id="dialog-actions">
+                            <button onClick={resolveKeepMine} disabled={loading}>Keep mine</button>
+                            <button onClick={resolveKeepTheirs} disabled={loading}>Keep theirs</button>
+                            <button onClick={resolveCancel}>Cancel</button>
                         </div>
                     </div>
                 </div>

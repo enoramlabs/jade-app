@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -180,6 +181,48 @@ func TestApp_RenderMarkdown_requires_no_open_vault(t *testing.T) {
 	html := app.RenderMarkdown("hello")
 	if html == "" {
 		t.Error("RenderMarkdown should return non-empty HTML even without open vault")
+	}
+}
+
+func TestApp_UpdateNote_returns_structured_conflict_error(t *testing.T) {
+	dir := t.TempDir()
+	writeTestNote(t, dir, "note.md", "# Original")
+	app := NewApp()
+	if _, err := app.OpenVault(dir); err != nil {
+		t.Fatalf("OpenVault: %v", err)
+	}
+
+	// Read to capture ETag.
+	note, err := app.ReadNote("note.md")
+	if err != nil {
+		t.Fatalf("ReadNote: %v", err)
+	}
+	staleEtag := note.ETag
+
+	// Simulate external edit.
+	if err := os.WriteFile(filepath.Join(dir, "note.md"), []byte("# External edit"), 0o644); err != nil {
+		t.Fatalf("external write: %v", err)
+	}
+
+	// UpdateNote with stale ETag must return a structured CONFLICT error.
+	_, updateErr := app.UpdateNote("note.md", "# My version", nil, staleEtag)
+	if updateErr == nil {
+		t.Fatal("expected error on conflict, got nil")
+	}
+
+	// The error message must be a JSON object with code == "CONFLICT".
+	var appErr appError
+	if err := json.Unmarshal([]byte(updateErr.Error()), &appErr); err != nil {
+		t.Fatalf("error is not JSON: %v — raw: %q", err, updateErr.Error())
+	}
+	if appErr.Code != "CONFLICT" {
+		t.Errorf("Code = %q, want %q", appErr.Code, "CONFLICT")
+	}
+	if appErr.CurrentContent == "" {
+		t.Error("CurrentContent must be non-empty on CONFLICT")
+	}
+	if appErr.CurrentETag == "" {
+		t.Error("CurrentETag must be non-empty on CONFLICT")
 	}
 }
 
