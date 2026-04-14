@@ -727,6 +727,34 @@ body {
     width: 100%;
 }
 
+#welcome-busy {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: #1e1e2e;
+    color: #a6adc8;
+    font-size: 13px;
+    text-align: left;
+}
+
+#welcome-busy .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #45475a;
+    border-top-color: #89b4fa;
+    border-radius: 50%;
+    animation: jade-spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes jade-spin {
+    to { transform: rotate(360deg); }
+}
+
 .welcome-btn {
     width: 100%;
     padding: 10px 0;

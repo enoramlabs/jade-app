@@ -42,45 +42,38 @@ interface WelcomeScreenProps {
 }
 
 function WelcomeScreen({ startupError, recentVaults, onVaultOpened, onError }: WelcomeScreenProps) {
-    const [loading, setLoading] = useState(false);
+    // null = idle; non-null = in progress with a status message
+    const [busy, setBusy] = useState<string | null>(null);
 
-    const handleOpenVault = useCallback(async () => {
-        setLoading(true);
+    const runWithBusy = useCallback(async (
+        label: string,
+        fn: () => Promise<{ path: string }>,
+    ) => {
+        setBusy(label);
         try {
-            // Empty string triggers native dir-picker in the Go layer.
-            const info = await OpenVault('');
+            const info = await fn();
             onVaultOpened(info.path);
         } catch (e: unknown) {
             onError(String(e));
         } finally {
-            setLoading(false);
+            setBusy(null);
         }
     }, [onVaultOpened, onError]);
 
-    const handleCreateVault = useCallback(async () => {
-        setLoading(true);
-        try {
-            // Empty string triggers native dir-picker in the Go layer.
-            const info = await CreateVault('');
-            onVaultOpened(info.path);
-        } catch (e: unknown) {
-            onError(String(e));
-        } finally {
-            setLoading(false);
-        }
-    }, [onVaultOpened, onError]);
+    const handleOpenVault = useCallback(() => {
+        // Empty string triggers native dir-picker in the Go layer.
+        return runWithBusy('Opening vault — scanning notes and building index…', () => OpenVault(''));
+    }, [runWithBusy]);
 
-    const handleOpenRecent = useCallback(async (path: string) => {
-        setLoading(true);
-        try {
-            const info = await OpenVault(path);
-            onVaultOpened(info.path);
-        } catch (e: unknown) {
-            onError(String(e));
-        } finally {
-            setLoading(false);
-        }
-    }, [onVaultOpened, onError]);
+    const handleCreateVault = useCallback(() => {
+        return runWithBusy('Creating vault…', () => CreateVault(''));
+    }, [runWithBusy]);
+
+    const handleOpenRecent = useCallback((path: string) => {
+        return runWithBusy(`Opening ${path} — scanning notes and building index…`, () => OpenVault(path));
+    }, [runWithBusy]);
+
+    const loading = busy !== null;
 
     return (
         <div id="welcome-screen">
@@ -100,16 +93,23 @@ function WelcomeScreen({ startupError, recentVaults, onVaultOpened, onError }: W
                         onClick={handleOpenVault}
                         disabled={loading}
                     >
-                        Open Vault
+                        {loading ? 'Working…' : 'Open Vault'}
                     </button>
                     <button
                         className="welcome-btn secondary"
                         onClick={handleCreateVault}
                         disabled={loading}
                     >
-                        Create Vault
+                        {loading ? 'Working…' : 'Create Vault'}
                     </button>
                 </div>
+
+                {busy && (
+                    <div id="welcome-busy">
+                        <div className="spinner" aria-hidden="true" />
+                        <span>{busy}</span>
+                    </div>
+                )}
 
                 {recentVaults.length > 0 && (
                     <div id="welcome-recents">
