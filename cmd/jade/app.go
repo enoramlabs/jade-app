@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/enoramlabs/jade-app/core"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // VaultInfo is returned by OpenVault and contains basic vault metadata.
@@ -15,8 +16,9 @@ type VaultInfo struct {
 // App is the struct bound to the Wails runtime.
 // Its exported methods are available as JavaScript promises in the frontend.
 type App struct {
-	ctx   context.Context
-	vault *core.FSVault
+	ctx         context.Context
+	vault       *core.FSVault
+	watchCancel context.CancelFunc // cancels the active Watch goroutine
 }
 
 // NewApp creates a new App application struct.
@@ -41,8 +43,41 @@ func (a *App) OpenVault(path string) (VaultInfo, error) {
 		return VaultInfo{}, err
 	}
 
+	// Cancel any previously running watcher.
+	if a.watchCancel != nil {
+		a.watchCancel()
+	}
+
 	a.vault = v
+	a.startWatch()
 	return VaultInfo{Path: path}, nil
+}
+
+// startWatch launches a goroutine that bridges vault watch events to the Wails
+// event bus as "vault.changed" events. It is a no-op when called outside the
+// Wails runtime (e.g. in unit tests where a.ctx is nil).
+func (a *App) startWatch() {
+	if a.ctx == nil {
+		return
+	}
+
+	watchCtx, cancel := context.WithCancel(a.ctx)
+	a.watchCancel = cancel
+
+	ch, err := a.vault.Watch(watchCtx)
+	if err != nil {
+		cancel()
+		return
+	}
+
+	go func() {
+		for evt := range ch {
+			runtime.EventsEmit(a.ctx, "vault.changed", map[string]string{
+				"type": string(evt.Type),
+				"id":   evt.ID,
+			})
+		}
+	}()
 }
 
 // ListNotes returns metadata for all notes under the given sub-path.

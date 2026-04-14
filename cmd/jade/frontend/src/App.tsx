@@ -8,6 +8,7 @@ import {
     RenderMarkdown,
 } from '../wailsjs/go/main/App';
 import type { NoteMeta, Note } from '../wailsjs/go/main/App';
+import { EventsOn } from '../wailsjs/runtime/runtime';
 import './App.css';
 
 function App() {
@@ -41,6 +42,34 @@ function App() {
             if (previewDebounce.current) clearTimeout(previewDebounce.current);
         };
     }, []);
+
+    // Subscribe to vault.changed events emitted by the Go Watch bridge.
+    // When a note that is currently open changes externally, reload it.
+    // Always refresh the tree so new/deleted notes appear.
+    useEffect(() => {
+        const off = EventsOn('vault.changed', (evt: { type: string; id: string }) => {
+            // Refresh tree on any structural change.
+            refreshTree().catch(() => {});
+
+            // If the currently open note changed externally, reload its content.
+            setSelectedNote(prev => {
+                if (prev && prev.ID === evt.id && (evt.type === 'update' || evt.type === 'create')) {
+                    ReadNote(evt.id)
+                        .then(note => {
+                            setSelectedNote(note);
+                            setEditBody(note.Body);
+                            setDirty(false);
+                            currentEtag.current = note.ETag;
+                            return RenderMarkdown(note.Body);
+                        })
+                        .then(html => setPreviewHtml(html))
+                        .catch(() => {});
+                }
+                return prev;
+            });
+        });
+        return off;
+    }, [refreshTree]);
 
     const refreshTree = useCallback(async () => {
         const list = await ListNotes('');

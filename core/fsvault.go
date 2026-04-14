@@ -11,19 +11,24 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // FSVault is a filesystem-backed Vault implementation.
 // The vault root is a directory; each .md file is a note.
 type FSVault struct {
-	root string
-	// mu stores per-path *sync.Mutex values to serialize concurrent writes.
-	mu sync.Map
+	root    string
+	mu      sync.Map   // per-path *sync.Mutex for concurrent writes
+	ignored *ignoreSet // paths recently written by FSVault itself
 }
 
 // NewFSVault creates an FSVault rooted at the given directory path.
 func NewFSVault(root string) *FSVault {
-	return &FSVault{root: filepath.Clean(root)}
+	return &FSVault{
+		root:    filepath.Clean(root),
+		ignored: newIgnoreSet(),
+	}
 }
 
 // Open verifies the vault root exists.
@@ -119,6 +124,7 @@ func (v *FSVault) Create(ctx context.Context, note NoteMeta, body string) (*Note
 		return nil, fmt.Errorf("create parent dirs: %w", err)
 	}
 
+	v.ignored.add(absPath, selfWriteTTL)
 	if err := atomicWriteFile(absPath, body); err != nil {
 		return nil, err
 	}
@@ -150,6 +156,7 @@ func (v *FSVault) Update(ctx context.Context, id string, body string, frontmatte
 		return nil, &ConflictError{ID: id, Current: existing}
 	}
 
+	v.ignored.add(absPath, selfWriteTTL)
 	if err := atomicWriteFile(absPath, body); err != nil {
 		return nil, err
 	}
@@ -170,6 +177,7 @@ func (v *FSVault) Delete(ctx context.Context, id string) error {
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		return &NotFoundError{ID: id}
 	}
+	v.ignored.add(absPath, selfWriteTTL)
 	return os.Remove(absPath)
 }
 
@@ -209,6 +217,8 @@ func (v *FSVault) Move(ctx context.Context, fromID, toID string) error {
 	if err := os.MkdirAll(filepath.Dir(dstAbs), 0o755); err != nil {
 		return fmt.Errorf("create parent dirs: %w", err)
 	}
+	v.ignored.add(srcAbs, selfWriteTTL)
+	v.ignored.add(dstAbs, selfWriteTTL)
 	return os.Rename(srcAbs, dstAbs)
 }
 
@@ -217,10 +227,6 @@ func (v *FSVault) Search(_ context.Context, _ SearchQuery) ([]NoteMeta, error) {
 }
 
 func (v *FSVault) Backlinks(_ context.Context, _ string) ([]NoteMeta, error) {
-	return nil, ErrNotImplemented
-}
-
-func (v *FSVault) Watch(_ context.Context) (<-chan VaultEvent, error) {
 	return nil, ErrNotImplemented
 }
 
@@ -247,6 +253,8 @@ func (v *FSVault) readNote(id, absPath string) (*Note, error) {
 	if !utf8.ValidString(body) {
 		return nil, &EncodingError{Path: id}
 	}
+	// Normalize to NFC so NFD filenames/content from macOS don't cause drift.
+	body = norm.NFC.String(body)
 
 	info, err := os.Stat(absPath)
 	if err != nil {
