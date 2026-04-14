@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { EditorView } from '@codemirror/view';
 import {
     OpenVault, ListNotes, ReadNote,
     CreateNote, UpdateNote, DeleteNote, MoveNote,
@@ -636,7 +637,7 @@ function App() {
                             {selectedNote ? (
                                 <CodeMirror
                                     value={editBody}
-                                    extensions={[markdown()]}
+                                    extensions={[markdown(), EditorView.lineWrapping]}
                                     theme={oneDark}
                                     height="100%"
                                     style={{ height: '100%', fontSize: '14px' }}

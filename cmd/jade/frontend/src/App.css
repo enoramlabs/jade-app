@@ -130,8 +130,29 @@ body {
     border-right: 1px solid #313244;
 }
 
+/* CodeMirror wrapper flex sizing.
+   @uiw/react-codemirror renders <div class="cm-theme"> as the outermost
+   element. Its parent (#editor-pane) is a flex column; the theme wrapper
+   needs to claim a flex share so its 100% height resolves to a concrete
+   pixel value — otherwise .cm-editor collapses to 0 height and CodeMirror
+   never creates cm-content. */
+#editor-pane > .cm-theme {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
 #editor-pane .cm-editor {
-    height: 100%;
+    flex: 1;
+    min-height: 0;
+    height: auto;
+}
+
+#editor-pane .cm-scroller {
+    flex: 1;
+    min-height: 0;
 }
 
 #editor-placeholder {
