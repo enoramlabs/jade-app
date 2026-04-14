@@ -5,7 +5,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import {
     OpenVault, ListNotes, ReadNote,
     CreateNote, UpdateNote, DeleteNote, MoveNote,
-    RenderMarkdown,
+    RenderMarkdown, Backlinks, ResolveWikilink,
 } from '../wailsjs/go/main/App';
 import type { NoteMeta, Note } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
@@ -33,6 +33,7 @@ function App() {
     const [selectedNote, setSelectedNote] = useState<Note | null>(null);
     const [editBody, setEditBody] = useState('');
     const [previewHtml, setPreviewHtml] = useState('');
+    const [backlinks, setBacklinks] = useState<NoteMeta[]>([]);
     const [dirty, setDirty] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -44,6 +45,7 @@ function App() {
     const pendingBody = useRef(''); // body the user was trying to save when conflict occurred
     const currentEtag = useRef('');
     const previewDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const previewRef = useRef<HTMLDivElement | null>(null);
 
     // Debounced preview update: re-renders the preview 100ms after source changes.
     const updatePreview = useCallback((source: string) => {
@@ -104,6 +106,7 @@ function App() {
             setSelectedNote(null);
             setEditBody('');
             setPreviewHtml('');
+            setBacklinks([]);
             setDirty(false);
         } catch (e: unknown) {
             setError(String(e));
@@ -123,6 +126,9 @@ function App() {
             currentEtag.current = note.ETag;
             const html = await RenderMarkdown(note.Body);
             setPreviewHtml(html);
+            // Fetch backlinks for this note.
+            const bl = await Backlinks(note.ID).catch(() => [] as NoteMeta[]);
+            setBacklinks(bl ?? []);
         } catch (e: unknown) {
             setError(String(e));
         } finally {
@@ -212,6 +218,7 @@ function App() {
             setSelectedNote(note);
             setEditBody(note.Body);
             setPreviewHtml('');
+            setBacklinks([]);
             setDirty(false);
             currentEtag.current = note.ETag;
             setNewNoteName('');
@@ -231,6 +238,7 @@ function App() {
                 setSelectedNote(null);
                 setEditBody('');
                 setPreviewHtml('');
+                setBacklinks([]);
                 setDirty(false);
             }
             await refreshTree();
@@ -272,6 +280,57 @@ function App() {
         setDirty(true);
         updatePreview(val);
     }, [updatePreview]);
+
+    // After preview HTML updates, mark unresolved wikilinks and add embed placeholders.
+    useEffect(() => {
+        const container = previewRef.current;
+        if (!container) return;
+
+        // Mark wikilinks as resolved or broken based on current notes list.
+        const noteIds = notes.map(n => n.ID.toLowerCase());
+        container.querySelectorAll<HTMLElement>('[data-wikilink]').forEach(el => {
+            const target = el.getAttribute('data-wikilink') ?? '';
+            const targetLower = target.toLowerCase();
+            const resolved = noteIds.some(id =>
+                id === targetLower ||
+                id === targetLower + '.md' ||
+                id.split('/').pop() === targetLower + '.md'
+            );
+            if (resolved) {
+                el.classList.remove('wikilink-broken');
+                el.classList.add('wikilink-resolved');
+            } else {
+                el.classList.remove('wikilink-resolved');
+                el.classList.add('wikilink-broken');
+            }
+        });
+
+        // Replace embed placeholders with a visible label showing the target.
+        container.querySelectorAll<HTMLElement>('[data-embed]').forEach(el => {
+            if (!el.dataset.embedRendered) {
+                const target = el.getAttribute('data-embed') ?? '';
+                el.dataset.embedRendered = '1';
+                el.textContent = `📄 ${target}`;
+                el.classList.add('wikilink-embed-placeholder');
+            }
+        });
+    }, [previewHtml, notes]);
+
+    // Click delegation on the preview pane: intercept wikilink clicks.
+    const handlePreviewClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        const target = (e.target as HTMLElement).closest('[data-wikilink]') as HTMLElement | null;
+        if (!target) return;
+        e.preventDefault();
+        const wikilinkTarget = target.getAttribute('data-wikilink');
+        if (!wikilinkTarget) return;
+        ResolveWikilink(wikilinkTarget)
+            .then(id => {
+                if (!id) return; // unresolved — do nothing (already styled broken)
+                const meta = notes.find(n => n.ID === id);
+                if (meta) selectNote(meta);
+            })
+            .catch(() => {});
+    }, [notes, selectNote]);
 
     return (
         <div id="app-shell">
@@ -345,32 +404,61 @@ function App() {
                     )}
                 </aside>
 
-                {/* Split editor + preview */}
-                <div id="editor-split">
-                    {/* Source editor pane */}
-                    <div id="editor-pane">
-                        {selectedNote ? (
-                            <CodeMirror
-                                value={editBody}
-                                extensions={[markdown()]}
-                                theme={oneDark}
-                                height="100%"
-                                style={{ height: '100%', fontSize: '14px' }}
-                                onChange={handleEditorChange}
-                            />
-                        ) : (
-                            <div id="editor-placeholder">
-                                <p>Select a note from the tree to edit it.</p>
-                            </div>
-                        )}
+                {/* Editor area: split pane + backlinks panel */}
+                <div id="editor-area">
+                    {/* Split editor + preview */}
+                    <div id="editor-split">
+                        {/* Source editor pane */}
+                        <div id="editor-pane">
+                            {selectedNote ? (
+                                <CodeMirror
+                                    value={editBody}
+                                    extensions={[markdown()]}
+                                    theme={oneDark}
+                                    height="100%"
+                                    style={{ height: '100%', fontSize: '14px' }}
+                                    onChange={handleEditorChange}
+                                />
+                            ) : (
+                                <div id="editor-placeholder">
+                                    <p>Select a note from the tree to edit it.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Live preview pane */}
+                        <div
+                            id="preview-pane"
+                            className="markdown-preview"
+                            ref={previewRef}
+                            onClick={handlePreviewClick}
+                            dangerouslySetInnerHTML={{ __html: previewHtml || (selectedNote ? '' : '<p class="preview-placeholder">Preview will appear here.</p>') }}
+                        />
                     </div>
 
-                    {/* Live preview pane */}
-                    <div
-                        id="preview-pane"
-                        className="markdown-preview"
-                        dangerouslySetInnerHTML={{ __html: previewHtml || (selectedNote ? '' : '<p class="preview-placeholder">Preview will appear here.</p>') }}
-                    />
+                    {/* Backlinks panel */}
+                    {selectedNote && (
+                        <div id="backlinks-panel">
+                            <div id="backlinks-header">Backlinks</div>
+                            {backlinks.length === 0 ? (
+                                <p className="backlinks-empty">No backlinks</p>
+                            ) : (
+                                <ul id="backlinks-list">
+                                    {backlinks.map(bl => (
+                                        <li key={bl.ID}>
+                                            <button
+                                                className="backlink-item"
+                                                onClick={() => selectNote(bl)}
+                                                title={bl.ID}
+                                            >
+                                                {bl.Title || bl.ID}
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 

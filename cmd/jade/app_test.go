@@ -244,6 +244,42 @@ func TestApp_UpdateNote_returns_structured_conflict_error(t *testing.T) {
 	}
 }
 
+func TestApp_ResolveWikilink_resolves_to_canonical_id(t *testing.T) {
+	dir := t.TempDir()
+	writeTestNote(t, dir, "Alpha.md", "# Alpha")
+	writeTestNote(t, dir, "beta.md", "# Beta")
+	app := NewApp()
+	if _, err := app.OpenVault(dir); err != nil {
+		t.Fatalf("OpenVault: %v", err)
+	}
+
+	// Case-insensitive exact match: "alpha" should resolve to "Alpha.md".
+	id, err := app.ResolveWikilink("alpha")
+	if err != nil {
+		t.Fatalf("ResolveWikilink: %v", err)
+	}
+	if id != "Alpha.md" {
+		t.Errorf("ResolveWikilink('alpha') = %q, want %q", id, "Alpha.md")
+	}
+}
+
+func TestApp_ResolveWikilink_returns_empty_for_unresolved(t *testing.T) {
+	dir := t.TempDir()
+	writeTestNote(t, dir, "note.md", "# Note")
+	app := NewApp()
+	if _, err := app.OpenVault(dir); err != nil {
+		t.Fatalf("OpenVault: %v", err)
+	}
+
+	id, err := app.ResolveWikilink("nonexistent")
+	if err != nil {
+		t.Fatalf("ResolveWikilink: %v", err)
+	}
+	if id != "" {
+		t.Errorf("ResolveWikilink('nonexistent') = %q, want empty string", id)
+	}
+}
+
 func writeTestNote(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {

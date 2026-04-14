@@ -213,3 +213,20 @@ func (a *App) ExportHTML(id string) (string, error) {
 func (a *App) RenderMarkdown(source string) string {
 	return core.RenderMarkdownWithWikilinks(source)
 }
+
+// ResolveWikilink maps a wikilink target string to a canonical vault-relative note ID.
+// Resolution is case-insensitive. Returns empty string if no note matches.
+func (a *App) ResolveWikilink(target string) (string, error) {
+	if a.vault == nil {
+		return "", fmt.Errorf("no vault is open; call OpenVault first")
+	}
+	notes, err := a.vault.List(context.Background(), "")
+	if err != nil {
+		return "", err
+	}
+	allIDs := make([]string, len(notes))
+	for i, n := range notes {
+		allIDs[i] = n.ID
+	}
+	return core.ResolveWikilink(target, allIDs), nil
+}

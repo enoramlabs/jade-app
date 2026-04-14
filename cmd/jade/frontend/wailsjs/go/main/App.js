@@ -41,3 +41,11 @@ export function ExportHTML(arg1) {
 export function RenderMarkdown(arg1) {
     return window['go']['main']['App']['RenderMarkdown'](arg1);
 }
+
+export function Backlinks(arg1) {
+    return window['go']['main']['App']['Backlinks'](arg1);
+}
+
+export function ResolveWikilink(arg1) {
+    return window['go']['main']['App']['ResolveWikilink'](arg1);
+}

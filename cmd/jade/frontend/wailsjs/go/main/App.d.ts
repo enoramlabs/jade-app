@@ -28,3 +28,5 @@ export function DeleteNote(arg1: string): Promise<void>;
 export function MoveNote(arg1: string, arg2: string): Promise<void>;
 export function ExportHTML(arg1: string): Promise<string>;
 export function RenderMarkdown(arg1: string): Promise<string>;
+export function Backlinks(arg1: string): Promise<NoteMeta[]>;
+export function ResolveWikilink(arg1: string): Promise<string>;
