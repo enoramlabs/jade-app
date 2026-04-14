@@ -8,7 +8,10 @@ import {
     RenderMarkdown, Backlinks, ResolveWikilink, Search,
     GetStartupState, CreateVault, OpenInNewWindow,
 } from '../wailsjs/go/main/App';
-import type { NoteMeta, Note, StartupState } from '../wailsjs/go/main/App';
+import type { core, main } from '../wailsjs/go/models';
+type NoteMeta = core.NoteMeta;
+type Note = core.Note;
+type StartupState = main.StartupState;
 import { EventsOn } from '../wailsjs/runtime/runtime';
 import './App.css';
 
@@ -284,7 +287,7 @@ function App() {
         if (!selectedNote) return;
         setLoading(true); setError(null);
         try {
-            const updated = await UpdateNote(selectedNote.ID, editBody, null, currentEtag.current);
+            const updated = await UpdateNote(selectedNote.ID, editBody, {}, currentEtag.current);
             setSelectedNote(updated);
             setDirty(false);
             currentEtag.current = updated.ETag;
@@ -307,7 +310,7 @@ function App() {
         setLoading(true); setError(null);
         try {
             const updated = await UpdateNote(
-                selectedNote.ID, pendingBody.current, null, conflict.currentEtag,
+                selectedNote.ID, pendingBody.current, {}, conflict.currentEtag,
             );
             setSelectedNote(updated);
             setEditBody(updated.Body);
@@ -352,7 +355,7 @@ function App() {
         const id = name.endsWith('.md') ? name : name + '.md';
         setLoading(true); setError(null);
         try {
-            const note = await CreateNote(id, '', null);
+            const note = await CreateNote(id, '', {});
             await refreshTree();
             setSelectedNote(note);
             setEditBody(note.Body);
