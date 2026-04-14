@@ -43,6 +43,11 @@ function App() {
         };
     }, []);
 
+    const refreshTree = useCallback(async () => {
+        const list = await ListNotes('');
+        setNotes(list ?? []);
+    }, []);
+
     // Subscribe to vault.changed events emitted by the Go Watch bridge.
     // When a note that is currently open changes externally, reload it.
     // Always refresh the tree so new/deleted notes appear.
@@ -70,11 +75,6 @@ function App() {
         });
         return off;
     }, [refreshTree]);
-
-    const refreshTree = useCallback(async () => {
-        const list = await ListNotes('');
-        setNotes(list ?? []);
-    }, []);
 
     const openVault = useCallback(async () => {
         const path = vaultPath.trim();
