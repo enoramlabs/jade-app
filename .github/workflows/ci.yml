@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt check
+        run: |
+          files=$(gofmt -l ./core/ ./cmd/jade/*.go 2>/dev/null || true)
+          if [ -n "$files" ]; then
+            echo "The following files need gofmt:"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Test core
+        run: go test ./core/... -v -timeout 60s
+
+      - name: Test cmd/jade (unit tests only, no CGO required)
+        run: go test -tags unit ./cmd/jade/... -v -timeout 60s

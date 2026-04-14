@@ -1,0 +1,27 @@
+# Go
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+/dist/
+
+# Wails
+cmd/jade/frontend/dist/
+cmd/jade/frontend/node_modules/
+build/bin/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test cache
+/tmp/
