@@ -61,3 +61,58 @@ func (a *App) ReadNote(id string) (*core.Note, error) {
 	}
 	return a.vault.Read(context.Background(), id)
 }
+
+// CreateNote creates a new note at the given vault-relative path with the given body.
+// frontmatter is serialized and prepended to body before writing.
+func (a *App) CreateNote(path string, body string, frontmatter map[string]any) (*core.Note, error) {
+	if a.vault == nil {
+		return nil, fmt.Errorf("no vault is open; call OpenVault first")
+	}
+	fullBody, err := core.SerializeFrontmatter(frontmatter, body)
+	if err != nil {
+		return nil, err
+	}
+	return a.vault.Create(context.Background(), core.NoteMeta{ID: path}, fullBody)
+}
+
+// UpdateNote replaces the body of an existing note.
+// etag is used for optimistic concurrency; pass empty string to skip the check.
+func (a *App) UpdateNote(id string, body string, frontmatter map[string]any, etag string) (*core.Note, error) {
+	if a.vault == nil {
+		return nil, fmt.Errorf("no vault is open; call OpenVault first")
+	}
+	fullBody, err := core.SerializeFrontmatter(frontmatter, body)
+	if err != nil {
+		return nil, err
+	}
+	return a.vault.Update(context.Background(), id, fullBody, frontmatter, etag)
+}
+
+// DeleteNote removes a note permanently.
+func (a *App) DeleteNote(id string) error {
+	if a.vault == nil {
+		return fmt.Errorf("no vault is open; call OpenVault first")
+	}
+	return a.vault.Delete(context.Background(), id)
+}
+
+// MoveNote renames/moves a note from fromID to toID.
+func (a *App) MoveNote(fromID, toID string) error {
+	if a.vault == nil {
+		return fmt.Errorf("no vault is open; call OpenVault first")
+	}
+	return a.vault.Move(context.Background(), fromID, toID)
+}
+
+// ExportHTML renders a note as HTML. Stub — full implementation in sub-issue #4.
+func (a *App) ExportHTML(id string) (string, error) {
+	if a.vault == nil {
+		return "", fmt.Errorf("no vault is open; call OpenVault first")
+	}
+	note, err := a.vault.Read(context.Background(), id)
+	if err != nil {
+		return "", err
+	}
+	// Stub: return raw body wrapped in a <pre> block.
+	return "<pre>" + note.Body + "</pre>", nil
+}

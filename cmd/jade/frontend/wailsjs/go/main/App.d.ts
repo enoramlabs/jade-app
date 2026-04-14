@@ -22,3 +22,8 @@ export function Greet(arg1: string): Promise<string>;
 export function OpenVault(arg1: string): Promise<VaultInfo>;
 export function ListNotes(arg1: string): Promise<NoteMeta[]>;
 export function ReadNote(arg1: string): Promise<Note>;
+export function CreateNote(arg1: string, arg2: string, arg3: Record<string, unknown> | null): Promise<Note>;
+export function UpdateNote(arg1: string, arg2: string, arg3: Record<string, unknown> | null, arg4: string): Promise<Note>;
+export function DeleteNote(arg1: string): Promise<void>;
+export function MoveNote(arg1: string, arg2: string): Promise<void>;
+export function ExportHTML(arg1: string): Promise<string>;

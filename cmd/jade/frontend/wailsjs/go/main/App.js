@@ -17,3 +17,23 @@ export function ListNotes(arg1) {
 export function ReadNote(arg1) {
     return window['go']['main']['App']['ReadNote'](arg1);
 }
+
+export function CreateNote(arg1, arg2, arg3) {
+    return window['go']['main']['App']['CreateNote'](arg1, arg2, arg3);
+}
+
+export function UpdateNote(arg1, arg2, arg3, arg4) {
+    return window['go']['main']['App']['UpdateNote'](arg1, arg2, arg3, arg4);
+}
+
+export function DeleteNote(arg1) {
+    return window['go']['main']['App']['DeleteNote'](arg1);
+}
+
+export function MoveNote(arg1, arg2) {
+    return window['go']['main']['App']['MoveNote'](arg1, arg2);
+}
+
+export function ExportHTML(arg1) {
+    return window['go']['main']['App']['ExportHTML'](arg1);
+}

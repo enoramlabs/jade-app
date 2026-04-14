@@ -90,18 +90,6 @@ body {
     list-style: none;
 }
 
-#note-tree li {
-    padding: 5px 12px;
-    cursor: pointer;
-    font-size: 13px;
-    color: #bac2de;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    border-radius: 4px;
-    margin: 1px 4px;
-}
-
 #note-tree li:hover {
     background: #313244;
 }
@@ -136,4 +124,164 @@ body {
     height: 100%;
     color: #585b70;
     font-size: 14px;
+}
+
+/* Save button */
+#save-btn {
+    background: #a6e3a1;
+    color: #1e1e2e;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+#save-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* New note bar */
+#new-note-bar {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #313244;
+}
+
+#new-note-bar input {
+    flex: 1;
+    background: #313244;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    color: #cdd6f4;
+    padding: 3px 6px;
+    font-size: 12px;
+    outline: none;
+    min-width: 0;
+}
+
+#new-note-bar input:focus {
+    border-color: #89b4fa;
+}
+
+#new-note-bar button {
+    background: #89b4fa;
+    color: #1e1e2e;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* Note tree items with action buttons */
+#note-tree li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    cursor: default;
+    font-size: 13px;
+    color: #bac2de;
+    border-radius: 4px;
+    margin: 1px 4px;
+}
+
+.note-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.note-actions {
+    display: none;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+#note-tree li:hover .note-actions {
+    display: flex;
+}
+
+.icon-btn {
+    background: none;
+    border: none;
+    color: #bac2de;
+    cursor: pointer;
+    padding: 1px 4px;
+    font-size: 12px;
+    border-radius: 3px;
+}
+
+.icon-btn:hover {
+    background: #45475a;
+}
+
+.icon-btn.danger:hover {
+    background: #f38ba8;
+    color: #1e1e2e;
+}
+
+/* Modal dialog */
+#dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+#dialog {
+    background: #1e1e2e;
+    border: 1px solid #45475a;
+    border-radius: 8px;
+    padding: 20px 24px;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#dialog input {
+    background: #313244;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    color: #cdd6f4;
+    padding: 6px 10px;
+    font-size: 13px;
+    outline: none;
+}
+
+#dialog input:focus {
+    border-color: #89b4fa;
+}
+
+#dialog-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+#dialog-actions button {
+    background: #89b4fa;
+    color: #1e1e2e;
+    border: none;
+    border-radius: 4px;
+    padding: 5px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+#dialog-actions button.danger {
+    background: #f38ba8;
 }
