@@ -24,6 +24,7 @@
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json && node -e \"require('fs').copyFileSync('src/styles.css','dist/styles.css')\"",
     "dev": "vite",
+    "demo": "vite --config vite.demo.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
