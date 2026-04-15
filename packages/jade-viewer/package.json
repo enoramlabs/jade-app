@@ -1,6 +1,6 @@
 {
   "name": "@enoramlabs/jade-viewer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Jade's markdown viewer as a React component. GFM + wikilinks + safe rendering. Share a single MD renderer across advanceai, rc-web, and the Jade desktop app.",
   "type": "module",
   "main": "./dist/index.cjs",
