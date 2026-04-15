@@ -3,10 +3,12 @@ import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView } from '@codemirror/view';
+import { MarkdownView } from '@enoramlabs/jade-viewer';
+import '@enoramlabs/jade-viewer/styles.css';
 import {
     OpenVault, ListNotes, ReadNote,
     CreateNote, UpdateNote, DeleteNote, MoveNote,
-    RenderMarkdown, Backlinks, ResolveWikilink, Search,
+    Backlinks, ResolveWikilink, Search,
     GetStartupState, CreateVault, OpenInNewWindow,
 } from '../wailsjs/go/main/App';
 import type { core, main } from '../wailsjs/go/models';
@@ -146,7 +148,6 @@ function App() {
     const [notes, setNotes] = useState<NoteMeta[]>([]);
     const [selectedNote, setSelectedNote] = useState<Note | null>(null);
     const [editBody, setEditBody] = useState('');
-    const [previewHtml, setPreviewHtml] = useState('');
     const [backlinks, setBacklinks] = useState<NoteMeta[]>([]);
     const [dirty, setDirty] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -161,8 +162,6 @@ function App() {
     const [conflict, setConflict] = useState<AppConflictError | null>(null);
     const pendingBody = useRef('');
     const currentEtag = useRef('');
-    const previewDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const previewRef = useRef<HTMLDivElement | null>(null);
 
     // Load startup state on mount to determine welcome vs. editor view.
     useEffect(() => {
@@ -180,21 +179,11 @@ function App() {
             .finally(() => setStartupLoaded(true));
     }, []);
 
-    // Flush debounces on unmount.
+    // Flush search debounce on unmount.
     useEffect(() => {
         return () => {
-            if (previewDebounce.current) clearTimeout(previewDebounce.current);
             if (searchDebounce.current) clearTimeout(searchDebounce.current);
         };
-    }, []);
-
-    // Debounced preview update: re-renders the preview 100ms after source changes.
-    const updatePreview = useCallback((source: string) => {
-        if (previewDebounce.current) clearTimeout(previewDebounce.current);
-        previewDebounce.current = setTimeout(async () => {
-            const html = await RenderMarkdown(source);
-            setPreviewHtml(html);
-        }, 100);
     }, []);
 
     const refreshTree = useCallback(async () => {
@@ -215,9 +204,7 @@ function App() {
                             setEditBody(note.Body);
                             setDirty(false);
                             currentEtag.current = note.ETag;
-                            return RenderMarkdown(note.Body);
                         })
-                        .then(html => setPreviewHtml(html))
                         .catch(() => {});
                 }
                 return prev;
@@ -232,7 +219,6 @@ function App() {
         setStartupError('');
         setSelectedNote(null);
         setEditBody('');
-        setPreviewHtml('');
         setBacklinks([]);
         setDirty(false);
         setSearchQuery('');
@@ -252,7 +238,6 @@ function App() {
             await refreshTree();
             setSelectedNote(null);
             setEditBody('');
-            setPreviewHtml('');
             setBacklinks([]);
             setDirty(false);
             setSearchQuery('');
@@ -273,8 +258,6 @@ function App() {
             setEditBody(note.Body);
             setDirty(false);
             currentEtag.current = note.ETag;
-            const html = await RenderMarkdown(note.Body);
-            setPreviewHtml(html);
             const bl = await Backlinks(note.ID).catch(() => [] as NoteMeta[]);
             setBacklinks(bl ?? []);
         } catch (e: unknown) {
@@ -339,8 +322,6 @@ function App() {
             setSelectedNote(fresh);
             setEditBody(fresh.Body);
             currentEtag.current = fresh.ETag;
-            const html = await RenderMarkdown(fresh.Body).catch(() => '');
-            setPreviewHtml(html);
         }
     }, [selectedNote, conflict]);
 
@@ -360,7 +341,6 @@ function App() {
             await refreshTree();
             setSelectedNote(note);
             setEditBody(note.Body);
-            setPreviewHtml('');
             setBacklinks([]);
             setDirty(false);
             currentEtag.current = note.ETag;
@@ -380,7 +360,6 @@ function App() {
             if (selectedNote?.ID === deleteTarget) {
                 setSelectedNote(null);
                 setEditBody('');
-                setPreviewHtml('');
                 setBacklinks([]);
                 setDirty(false);
             }
@@ -421,8 +400,7 @@ function App() {
     const handleEditorChange = useCallback((val: string) => {
         setEditBody(val);
         setDirty(true);
-        updatePreview(val);
-    }, [updatePreview]);
+    }, []);
 
     const handleSearchChange = useCallback((val: string) => {
         setSearchQuery(val);
@@ -441,52 +419,29 @@ function App() {
         }, 300);
     }, []);
 
-    // After preview HTML updates, mark unresolved wikilinks and add embed placeholders.
-    useEffect(() => {
-        const container = previewRef.current;
-        if (!container) return;
+    // Async resolver fed to MarkdownView's resolveWikilink prop. Called by
+    // the component once per unique target to decorate links with
+    // resolved/broken CSS classes.
+    const resolveWikilinkForView = useCallback(async (target: string): Promise<string | null> => {
+        try {
+            const id = await ResolveWikilink(target);
+            return id || null;
+        } catch {
+            return null;
+        }
+    }, []);
 
-        const noteIds = notes.map(n => n.ID.toLowerCase());
-        container.querySelectorAll<HTMLElement>('[data-wikilink]').forEach(el => {
-            const target = el.getAttribute('data-wikilink') ?? '';
-            const targetLower = target.toLowerCase();
-            const resolved = noteIds.some(id =>
-                id === targetLower ||
-                id === targetLower + '.md' ||
-                id.split('/').pop() === targetLower + '.md'
-            );
-            if (resolved) {
-                el.classList.remove('wikilink-broken');
-                el.classList.add('wikilink-resolved');
-            } else {
-                el.classList.remove('wikilink-resolved');
-                el.classList.add('wikilink-broken');
-            }
-        });
-
-        container.querySelectorAll<HTMLElement>('[data-embed]').forEach(el => {
-            if (!el.dataset.embedRendered) {
-                const target = el.getAttribute('data-embed') ?? '';
-                el.dataset.embedRendered = '1';
-                el.textContent = `📄 ${target}`;
-                el.classList.add('wikilink-embed-placeholder');
-            }
-        });
-    }, [previewHtml, notes]);
-
-    const handlePreviewClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        const target = (e.target as HTMLElement).closest('[data-wikilink]') as HTMLElement | null;
-        if (!target) return;
-        e.preventDefault();
-        const wikilinkTarget = target.getAttribute('data-wikilink');
-        if (!wikilinkTarget) return;
-        ResolveWikilink(wikilinkTarget)
-            .then(id => {
-                if (!id) return;
-                const meta = notes.find(n => n.ID === id);
-                if (meta) selectNote(meta);
-            })
-            .catch(() => {});
+    // Fired when the user clicks a wikilink in the MarkdownView preview.
+    // Resolves the target and, if it maps to a known note, opens it.
+    const handleWikilinkClick = useCallback(async (target: string) => {
+        try {
+            const id = await ResolveWikilink(target);
+            if (!id) return;
+            const meta = notes.find(n => n.ID === id);
+            if (meta) selectNote(meta);
+        } catch {
+            /* broken link — do nothing */
+        }
     }, [notes, selectNote]);
 
     const handleNewWindow = useCallback(() => {
@@ -650,14 +605,18 @@ function App() {
                             )}
                         </div>
 
-                        {/* Live preview pane */}
-                        <div
-                            id="preview-pane"
-                            className="markdown-preview"
-                            ref={previewRef}
-                            onClick={handlePreviewClick}
-                            dangerouslySetInnerHTML={{ __html: previewHtml || (selectedNote ? '' : '<p class="preview-placeholder">Preview will appear here.</p>') }}
-                        />
+                        {/* Live preview pane — powered by @enoramlabs/jade-viewer */}
+                        <div id="preview-pane" className="markdown-preview">
+                            {selectedNote ? (
+                                <MarkdownView
+                                    source={editBody}
+                                    onWikilinkClick={handleWikilinkClick}
+                                    resolveWikilink={resolveWikilinkForView}
+                                />
+                            ) : (
+                                <p className="preview-placeholder">Preview will appear here.</p>
+                            )}
+                        </div>
                     </div>
 
                     {/* Backlinks panel */}
