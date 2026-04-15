@@ -28,3 +28,9 @@ Thumbs.db
 
 # Wails cache
 cmd/jade/frontend/package.json.md5
+
+# npm packages — node_modules and build output
+packages/*/node_modules/
+packages/*/dist/
+packages/*/package-lock.json
+packages/*/*.tsbuildinfo

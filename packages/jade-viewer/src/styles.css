@@ -1,0 +1,168 @@
+/*
+ * @enoramlabs/jade-viewer — default styles.
+ *
+ * This stylesheet is OPTIONAL. Consumers that want full control over
+ * appearance can skip the import and style `.jade-markdown-view` and
+ * its descendants themselves.
+ *
+ * The default theme targets a dark Catppuccin-inspired background but
+ * only sets colors that are necessary for the wikilink decorations and
+ * basic readability. Consumers can override any of these variables.
+ */
+
+.jade-markdown-view {
+  --jade-fg: var(--jade-fg-override, #cdd6f4);
+  --jade-muted: var(--jade-muted-override, #a6adc8);
+  --jade-bg-code: var(--jade-bg-code-override, #181825);
+  --jade-border: var(--jade-border-override, #313244);
+  --jade-link: var(--jade-link-override, #89b4fa);
+  --jade-link-broken: var(--jade-link-broken-override, #f38ba8);
+  --jade-embed-bg: var(--jade-embed-bg-override, #1e1e2e);
+
+  color: var(--jade-fg);
+  font-family: inherit;
+  line-height: 1.6;
+  word-wrap: break-word;
+}
+
+.jade-markdown-view > :first-child {
+  margin-top: 0;
+}
+
+.jade-markdown-view > :last-child {
+  margin-bottom: 0;
+}
+
+.jade-markdown-view p {
+  margin: 0.6em 0;
+}
+
+.jade-markdown-view h1,
+.jade-markdown-view h2,
+.jade-markdown-view h3,
+.jade-markdown-view h4,
+.jade-markdown-view h5,
+.jade-markdown-view h6 {
+  margin: 1.2em 0 0.5em;
+  line-height: 1.3;
+}
+
+.jade-markdown-view h1 { font-size: 1.6em; }
+.jade-markdown-view h2 { font-size: 1.35em; }
+.jade-markdown-view h3 { font-size: 1.15em; }
+
+.jade-markdown-view a {
+  color: var(--jade-link);
+  text-decoration: none;
+}
+.jade-markdown-view a:hover {
+  text-decoration: underline;
+}
+
+.jade-markdown-view code {
+  background: var(--jade-bg-code);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-size: 0.9em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.jade-markdown-view pre {
+  background: var(--jade-bg-code);
+  padding: 0.8em 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+  border: 1px solid var(--jade-border);
+}
+
+.jade-markdown-view pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.9em;
+}
+
+.jade-markdown-view blockquote {
+  margin: 0.6em 0;
+  padding: 0.2em 0 0.2em 1em;
+  border-left: 3px solid var(--jade-border);
+  color: var(--jade-muted);
+}
+
+.jade-markdown-view ul,
+.jade-markdown-view ol {
+  padding-left: 1.4em;
+  margin: 0.6em 0;
+}
+
+.jade-markdown-view li {
+  margin: 0.2em 0;
+}
+
+.jade-markdown-view table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  display: block;
+  overflow-x: auto;
+}
+
+.jade-markdown-view th,
+.jade-markdown-view td {
+  border: 1px solid var(--jade-border);
+  padding: 0.4em 0.8em;
+}
+
+.jade-markdown-view th {
+  background: var(--jade-bg-code);
+  font-weight: 600;
+}
+
+.jade-markdown-view hr {
+  border: none;
+  border-top: 1px solid var(--jade-border);
+  margin: 1.2em 0;
+}
+
+/* Wikilink styles. */
+
+.jade-markdown-view .jade-wikilink {
+  color: var(--jade-link);
+  cursor: pointer;
+  border-bottom: 1px dotted var(--jade-link);
+}
+
+.jade-markdown-view .jade-wikilink:hover {
+  text-decoration: none;
+  border-bottom-style: solid;
+}
+
+.jade-markdown-view .jade-wikilink:focus {
+  outline: 2px solid var(--jade-link);
+  outline-offset: 2px;
+}
+
+.jade-markdown-view .jade-wikilink-broken {
+  color: var(--jade-link-broken);
+  border-bottom-color: var(--jade-link-broken);
+  border-bottom-style: dashed;
+}
+
+.jade-markdown-view .jade-wikilink-resolved {
+  /* Reserved for future decoration (e.g. favicon next to resolved links). */
+}
+
+.jade-markdown-view .jade-wikilink-embed {
+  display: inline-block;
+  padding: 0.15em 0.5em;
+  background: var(--jade-embed-bg);
+  border: 1px solid var(--jade-border);
+  border-radius: 4px;
+  color: var(--jade-muted);
+  font-size: 0.9em;
+}
+
+/* Task lists (GFM). */
+
+.jade-markdown-view input[type='checkbox'] {
+  margin-right: 0.4em;
+}
