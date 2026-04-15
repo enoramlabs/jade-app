@@ -1,6 +1,6 @@
 {
   "name": "@enoramlabs/jade-viewer",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Jade's markdown viewer as a React component. GFM + wikilinks + safe rendering. Share a single MD renderer across advanceai, rc-web, and the Jade desktop app.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -58,7 +58,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/enoramlabs/jade-app.git",
+    "url": "git+https://github.com/enoramlabs/jade-app.git",
     "directory": "packages/jade-viewer"
   },
   "license": "MIT"

@@ -1,0 +1,65 @@
+name: Publish jade-viewer
+
+# Triggered by pushing a tag matching jade-viewer-v*.*.*
+# Example workflow for cutting a release:
+#
+#   cd packages/jade-viewer
+#   # Bump version in package.json + CHANGELOG.md, commit
+#   git tag jade-viewer-v0.1.0
+#   git push origin main jade-viewer-v0.1.0
+#
+# The tag push triggers this workflow, which runs typecheck + tests +
+# build + publish to npm with provenance.
+#
+# Requires repo secret NPM_TOKEN — a granular npm access token scoped to
+# publish @enoramlabs/jade-viewer. Set up at:
+#   https://www.npmjs.com/settings/<username>/tokens/granular-access-tokens/new
+#
+# And stored at:
+#   Repo Settings → Secrets and variables → Actions → NPM_TOKEN
+
+on:
+  push:
+    tags:
+      - 'jade-viewer-v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/jade-viewer
+    permissions:
+      contents: read
+      # id-token: write is required for npm provenance.
+      # See https://docs.npmjs.com/generating-provenance-statements
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify package contents (dry run)
+        run: npm publish --dry-run --access public
+
+      - name: Publish to npm
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
