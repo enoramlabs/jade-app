@@ -51,6 +51,24 @@ function stripFrontmatter(source: string): string {
 }
 
 /**
+ * Whether an `<a>` href resolves to an EXTERNAL origin via a protocol-relative
+ * URL. rehype-sanitize blocks dangerous protocols (javascript:, data:) but
+ * PERMITS protocol-relative ("//evil.com") and the backslash variants browsers
+ * fold to it ("/\", "\\", "\/", percent-encoded "/%5C") — a phishing vector.
+ * We decode + normalize backslashes, then reject a leading "//". Real
+ * http(s)/mailto links and same-origin relative paths pass through.
+ */
+export function isUnsafeHref(href: string): boolean {
+  let h = href.trim();
+  try {
+    h = decodeURIComponent(h);
+  } catch {
+    // keep the raw value if it isn't valid percent-encoding
+  }
+  return h.replace(/\\/g, '/').startsWith('//');
+}
+
+/**
  * MarkdownView renders CommonMark + GFM + Obsidian-style wikilinks as
  * React elements. It is a pure component: consumers own all state and
  * decide what clicking a wikilink should do.
@@ -176,6 +194,18 @@ export const MarkdownView: FC<MarkdownViewProps> = ({
           return <>{codeBlockRenderer(code, lang)}</>;
         }
         return <code className={cls}>{children}</code>;
+      },
+      // Links — block protocol-relative / backslash-normalized hrefs (a
+      // phishing vector rehype-sanitize permits) by rendering them as plain
+      // text; open safe links externally with no opener/referrer leakage.
+      a: (props: { href?: string; children?: ReactNode }) => {
+        const href = (props.href ?? '').trim();
+        if (!href || isUnsafeHref(href)) return <>{props.children}</>;
+        return (
+          <a href={href} target="_blank" rel="noopener noreferrer nofollow">
+            {props.children}
+          </a>
+        );
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
